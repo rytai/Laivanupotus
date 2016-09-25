@@ -7,7 +7,8 @@
 #include <stdio.h> // Syöttö ja kirjoitus
 
 
-#include<stdlib.h> //Sleep funktio
+#include<stdlib.h> //Sleep/rand
+#include<time.h>
 
 HANDLE writeHandle;
 HANDLE readHandle;
@@ -135,15 +136,52 @@ class Animation {
 		};
 };
 
-int main() {
-	Display display(10, 10, 80, 25);
-	Animation animation;
+int main(void) {
 
-	animation.PlayWelcomeAnimation(display);
+	CONST int WIDTH = 70;
+	CONST int HEIGHT = 35;
 
-	_sleep(1000);
+	int x, y;
 
-	display.DrawScreen();
+	// Annetaan random seed satunnaislukugeneraattorille.
+	srand(time(0)); 
 
-	//std::cout << "Durr\n";
+	//Ikkunan koko, nollaindeksi
+	SMALL_RECT windowSize = { 0, 0, WIDTH-1, HEIGHT-1 };
+	//Ikkunapuskurin koko
+	COORD bufferSize = { WIDTH, HEIGHT };
+
+	//WriteConsoleOutput muuttujat
+	COORD charactedBufferSize = { WIDTH, HEIGHT};
+	COORD characterPosition = { 0, 0 };
+	SMALL_RECT consoleWriteArea = { 0, 0, WIDTH-1, HEIGHT-1};
+
+	//CHAR_INFO puskuri koko ruudun merkeille
+	CHAR_INFO consoleBuffer[WIDTH * HEIGHT];
+
+	// Initialisoidaan kahvat
+	writeHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+	readHandle = GetStdHandle(STD_INPUT_HANDLE);
+
+	SetConsoleTitle(L"Battleships v0.1");
+
+	//Asetetaan ikkunan koko
+	SetConsoleWindowInfo(writeHandle, TRUE, &windowSize);
+
+	//Asetetaan ikkunabufferin koko
+	SetConsoleScreenBufferSize(writeHandle, bufferSize);
+
+	for (y = 0; y < HEIGHT; ++y) {
+		for (x = 0; x < WIDTH; ++x) {
+			consoleBuffer[x + WIDTH * y].Char.AsciiChar = (unsigned char)219;
+			consoleBuffer[x + WIDTH * y].Attributes = rand() % 256;
+		}
+	}
+
+	//kirjoitetaan puskuri näytölle.
+	WriteConsoleOutputA(writeHandle, consoleBuffer, charactedBufferSize, characterPosition, &consoleWriteArea);
+
+	getchar();
+
+
 }

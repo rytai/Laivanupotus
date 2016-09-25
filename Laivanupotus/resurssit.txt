@@ -1,0 +1,2 @@
+WINDOWS CONSOLE API
+https://cecilsunkure.blogspot.fi/2011/11/windows-console-game-setting-up-window.html
