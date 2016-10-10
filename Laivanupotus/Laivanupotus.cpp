@@ -145,6 +145,22 @@ private:
 	string filename;
 
 	void LoadScoresFromFile() {
+		ifstream file(filename);
+		string name;
+		string score;
+		int i = 0;
+		if (file.is_open()) {
+			while (getline(file, hs_names[i], ':')) {
+				getline(file, score);
+				hs_scores[i] = atoi(score.c_str());
+				i++;
+			}
+			file.close();
+		}
+		else {
+			cout << "Could not open highscores -file!";
+			exit(0);
+		}
 
 	};
 
@@ -157,6 +173,8 @@ private:
 public:
 
 	HighScoreManager(string highscore_filename, int score_count_){
+		hs_names = new string[10];
+		hs_scores = new int[10];
 		score_count = score_count_;
 		filename = highscore_filename;
 		LoadScoresFromFile();
@@ -168,7 +186,7 @@ public:
 		{
 			//Käydään läpi highscoret
 			for (int i = 0; i < score_count; i++) {
-				file << hs_names << ":" << hs_scores << "\n";
+				file << hs_names[i] << ":" << hs_scores[i] << "\n";
 			}
 		}
 		else {
@@ -177,6 +195,11 @@ public:
 		}
 		file.close();
 	};
+
+	void set_score_temp() {
+		hs_names[2] = "kia";
+		hs_scores[2] = 9001;
+	}
 };
 
 void uuden_puskurin_testaus() {
@@ -230,6 +253,8 @@ void uuden_puskurin_testaus() {
 int main(void) {
 
 	HighScoreManager highScoreManager = HighScoreManager("scores.txt", 10);
+
+	highScoreManager.set_score_temp();
 
 	highScoreManager.WriteHighScoresToFile();
 
