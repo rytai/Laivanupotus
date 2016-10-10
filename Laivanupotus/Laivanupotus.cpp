@@ -6,9 +6,10 @@
 #include <windows.h> //Handle -datatyyppi
 #include <stdio.h> // Syöttö ja kirjoitus
 
-
 #include<stdlib.h> //Sleep/rand
 #include<time.h>
+
+#include<fstream> //Tiedostojen luku, highscore
 
 HANDLE writeHandle;
 HANDLE readHandle;
@@ -136,25 +137,66 @@ class Animation {
 		};
 };
 
-int main(void) {
+class HighScoreManager {
+private:
+	string* hs_names;
+	int* hs_scores;
+	int score_count;
+	string filename;
 
+	void LoadScoresFromFile() {
+
+	};
+
+	ofstream OpenFile(string filename) {
+		ofstream file;
+		file.open(filename);
+		return file;
+	};
+
+public:
+
+	HighScoreManager(string highscore_filename, int score_count_){
+		score_count = score_count_;
+		filename = highscore_filename;
+		LoadScoresFromFile();
+	};
+
+	void WriteHighScoresToFile() {
+		ofstream file = OpenFile(filename);
+		if (file.is_open())
+		{
+			//Käydään läpi highscoret
+			for (int i = 0; i < score_count; i++) {
+				file << hs_names << ":" << hs_scores << "\n";
+			}
+		}
+		else {
+			std::cout << "Could not open highscores file!";
+			exit(666);
+		}
+		file.close();
+	};
+};
+
+void uuden_puskurin_testaus() {
 	CONST int WIDTH = 70;
 	CONST int HEIGHT = 35;
 
 	int x, y;
 
 	// Annetaan random seed satunnaislukugeneraattorille.
-	srand(time(0)); 
+	srand(time(0));
 
 	//Ikkunan koko, nollaindeksi
-	SMALL_RECT windowSize = { 0, 0, WIDTH-1, HEIGHT-1 };
+	SMALL_RECT windowSize = { 0, 0, WIDTH - 1, HEIGHT - 1 };
 	//Ikkunapuskurin koko
 	COORD bufferSize = { WIDTH, HEIGHT };
 
 	//WriteConsoleOutput muuttujat
-	COORD charactedBufferSize = { WIDTH, HEIGHT};
+	COORD charactedBufferSize = { WIDTH, HEIGHT };
 	COORD characterPosition = { 0, 0 };
-	SMALL_RECT consoleWriteArea = { 0, 0, WIDTH-1, HEIGHT-1};
+	SMALL_RECT consoleWriteArea = { 0, 0, WIDTH - 1, HEIGHT - 1 };
 
 	//CHAR_INFO puskuri koko ruudun merkeille
 	CHAR_INFO consoleBuffer[WIDTH * HEIGHT];
@@ -182,6 +224,15 @@ int main(void) {
 	WriteConsoleOutputA(writeHandle, consoleBuffer, charactedBufferSize, characterPosition, &consoleWriteArea);
 
 	getchar();
+}
 
+
+int main(void) {
+
+	HighScoreManager highScoreManager = HighScoreManager("scores.txt", 10);
+
+	highScoreManager.WriteHighScoresToFile();
+
+	exit(0);
 
 }
