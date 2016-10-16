@@ -11,6 +11,7 @@
 
 #include<fstream> //Tiedostojen luku, highscore
 
+
 HANDLE writeHandle;
 HANDLE readHandle;
 
@@ -98,13 +99,13 @@ class Animation {
 
 			//Piirret‰‰n ruutu, jotta saadaan kehykset n‰kyviin.
 			display.DrawScreen();
-			_sleep(200);
+			//_sleep(200);
 
 			//Aloitetaan rivist‰ 3
 			int y = 2;
 
 			for each (string row in welcome_text) {
-				_sleep(200);
+				//_sleep(200);
 				display.BlitTextAt(1, y, row);
 				display.DrawScreen();
 				y++;	
@@ -137,6 +138,124 @@ class Animation {
 		};
 };
 
+///10x10 Taulukko johon tallennetaan osumat ja alukset.
+class Board {
+	bool* shipArray;		//Pit‰‰ sis‰ll‰‰n alukset
+	bool* missileArray;	//Pit‰‰ sis‰ll‰‰n ohjukset
+
+
+public:
+	//Luo taulukot tyhj‰st‰
+	void InitiateArrays() {
+		bool shipArray[10][10];
+		bool missileArray[10][10];
+		for (int y = 0; y <= 10 - 1; y++) {
+			for (int x = 0; x <= 10 - 1; x++) {
+				shipArray[x][y] = false;
+				missileArray[x][y] = false;
+			}
+		}
+	}
+
+	//Passataan taulukot tiedostojen luvusta
+	void setShips(bool* shipArray_) {
+		shipArray = shipArray_;
+	}
+	void setMissiles(bool* missileArray_) {
+		missileArray = missileArray_;
+	}
+
+	Board() {
+		InitiateArrays();
+	}
+};
+
+class SaveHandler {
+	string saveFileName = "savefile.txt";
+
+	bool *board_p_ship_data;
+	bool *board_p_missile_data;
+	bool *board_c_ship_data;
+	bool *board_c_missile_data;
+
+public:
+
+	void LoadDataFromSaveFile() {
+		try {
+			ifstream file_;
+				file_.open(saveFileName);
+
+				if (file_.is_open()) {
+					board_p_ship_data = ReadSingleBoard(file_);
+					board_p_missile_data = ReadSingleBoard(file_);
+					board_c_ship_data = ReadSingleBoard(file_);
+					board_c_missile_data = ReadSingleBoard(file_);
+				}
+				else {
+					std::cout << "Cant open save file";
+					exit(11);
+				}
+				file_.close();
+			}
+		catch (...) {
+			std::cout << "Error in loading savefile-boards";
+			exit(11);
+		}
+	}
+
+	///Luetaan yksi 10x10 data-alue tiedostosta. Palatus
+	bool* ReadSingleBoard(ifstream & file) {
+		bool* bool_array = new bool[100];
+		int i = 0;
+		char character;
+
+		//K‰yd‰‰n l‰pi 100 seuraavaa kirjainta
+		while (file >> skipws >> character && i < 100){
+			if (character == 'o') {
+				bool_array[i] = false;
+			}
+			else if (character == 'x') {
+				bool_array[i] = true;
+			}
+			else if (character == '\n') {
+				bool_array[i] = true;
+			}
+			else {
+				std::cout << "There's something wrong with save file (board):>" << character << "<\n";
+			}
+			i++;
+		}
+
+		return bool_array;
+	}
+
+	///Board, True/False(True jos pelaajan lauta, false jos cpu lauta.
+	void FillBoardData(Board& board, bool player) {
+		int i = 0;
+		//Luodaan laudat passattavaksi
+		bool ship_board[10][10];
+		bool missile_board[10][10];
+
+		for (int y = 0; y < 10; y++) {
+			for (int x = 0; x < 10; x++) {
+				if (player == true) {
+					ship_board[x][y] = board_p_ship_data[i];
+					missile_board[x][y] = board_p_missile_data[i];
+				}
+				else {
+					ship_board[x][y] = board_c_ship_data[i];
+					missile_board[x][y] = board_c_missile_data[i];
+					i++;
+				}
+			}
+		}
+
+		board.setShips(*ship_board);
+		board.setMissiles(*missile_board);
+	}
+
+};
+
 class HighScoreManager {
 private:
 	string* hs_names;
@@ -145,6 +264,9 @@ private:
 	string filename;
 
 	void LoadScoresFromFile() {
+		string hs_names[10];
+		int hs_scores[10];
+
 		ifstream file(filename);
 		string name;
 		string score;
@@ -200,7 +322,14 @@ public:
 		hs_names[2] = "kia";
 		hs_scores[2] = 9001;
 	}
+
+	void PrintHighScores() {
+		for (int i = 0; i <= score_count - 1; i++) {
+			std::cout << hs_names[i] << " : " << hs_scores[i] << "\n";
+		}
+	}
 };
+
 
 void uuden_puskurin_testaus() {
 	CONST int WIDTH = 70;
@@ -209,7 +338,7 @@ void uuden_puskurin_testaus() {
 	int x, y;
 
 	// Annetaan random seed satunnaislukugeneraattorille.
-	srand(time(0));
+	//srand(time(0));-----------------------------------------------------------------------------------------
 
 	//Ikkunan koko, nollaindeksi
 	SMALL_RECT windowSize = { 0, 0, WIDTH - 1, HEIGHT - 1 };
@@ -250,14 +379,79 @@ void uuden_puskurin_testaus() {
 }
 
 
+class GameLogic {
+	bool gameLooping = true;
+	Board playerBoard;
+	Board cpuBoard;
+
+public:
+	void PrepareNewGame() {
+		//Yhteiset
+		playerBoard = Board();
+		cpuBoard = Board();
+
+		//omat
+		playerBoard.InitiateArrays();
+		cpuBoard.InitiateArrays();
+
+	}
+	void PrepareContinue(SaveHandler saveHandler) {
+		//Yhteiset
+		playerBoard = Board();
+		cpuBoard = Board();
+
+		//Latauksen omat
+		saveHandler.LoadDataFromSaveFile();
+		saveHandler.FillBoardData(playerBoard, true);
+		saveHandler.FillBoardData(cpuBoard, false);
+	}
+	void GameLoop() {
+		while (gameLooping == true) {
+			//LOOP
+		}
+	}
+};
+
+
 int main(void) {
-
+	//Lataa highscoret
 	HighScoreManager highScoreManager = HighScoreManager("scores.txt", 10);
+	SaveHandler saveHandler = SaveHandler();
+	GameLogic gameLogic = GameLogic();
 
-	highScoreManager.set_score_temp();
+	string inputString = "";	//Syˆttˆ
+	bool mainLoop = true;		//Silmukkaa varten
 
-	highScoreManager.WriteHighScoresToFile();
+
+	//P‰‰silmukka
+	while (mainLoop) {
+
+		std::cout << "N: New Game\n";
+		std::cout << "C: Continue\n";
+		std::cout << "H: High scores\n";
+		std::cout << "Q: Exit\n";
+
+		std::cin >> inputString;
+
+		if (inputString == "N" || inputString == "n") {
+			std::cout << "New game\n";
+		}
+		else if (inputString == "C" || inputString == "c") {
+			std::cout << "Loading game.\n";
+			gameLogic.PrepareContinue(saveHandler);
+		}
+		else if (inputString == "H" || inputString == "h") {
+			highScoreManager.PrintHighScores();
+		}
+		else if (inputString == "Q" || inputString == "q") {
+			std::cout << "Quit\n";
+			mainLoop = false;
+		}
+		else {
+			std::cout << "Please type N,C,H or Q.\n";
+		}
+
+	}
 
 	exit(0);
-
 }
