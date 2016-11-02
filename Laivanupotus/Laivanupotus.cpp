@@ -140,33 +140,120 @@ class Animation {
 
 ///10x10 Taulukko johon tallennetaan osumat ja alukset.
 class Board {
-	bool* shipArray;		//Pit‰‰ sis‰ll‰‰n alukset
-	bool* missileArray;	//Pit‰‰ sis‰ll‰‰n ohjukset
 
 
 public:
+	bool * shipArray;				//Pit‰‰ sis‰ll‰‰n alukset
+	bool * missileArray;			//Pit‰‰ sis‰ll‰‰n ohjukset
+	bool * shipArrayFree = new bool[100]();
+
 	//Luo taulukot tyhj‰st‰
-	void InitiateArrays() {
-		bool shipArray[10][10];
-		bool missileArray[10][10];
+	void FillArraysWithFalse() {
+		shipArray = new bool[100]();
+		missileArray = new bool[100]();
 		for (int y = 0; y <= 10 - 1; y++) {
 			for (int x = 0; x <= 10 - 1; x++) {
-				shipArray[x][y] = false;
-				missileArray[x][y] = false;
+				shipArray[y*10+y] = false;
+				missileArray[y*10+x] = false;
 			}
 		}
 	}
 
-	//Passataan taulukot tiedostojen luvusta
-	void setShips(bool* shipArray_) {
-		shipArray = shipArray_;
-	}
-	void setMissiles(bool* missileArray_) {
-		missileArray = missileArray_;
+	//asettaa aluksen palan soluun ja varaa ymp‰rilt‰ tilan, johon ei voi osaa laittaa.
+	void setCell(int x, int y) {
+		shipArray[y * 10 + x] = true;
+		//solun ymp‰rilt‰ varataan kaikki solut, jotta ei pystyisi laittamaan aluksia
+		//kyljitt‰in
+		for (int x_ = -1; x_ <= 1; x_++) {
+			for (int y_ = -1; y_ <= 1; y_++) {
+				shipArrayFree[(y + y_) * 10 + x + x_] = true;
+			}
+		}
 	}
 
-	Board() {
-		InitiateArrays();
+	///X,Y,Rotaatio(oikea=0 ja siit‰ myˆt‰p‰iv‰‰n), koko. Palauttaa false jos ei onnistunut.
+	bool setShip(int from_x, int from_y, int rotation, int size, bool iteration = false) {
+		int x = from_x;
+		int y = from_y;
+		int i = size;
+
+		//tarkistetaan, ett‰ alue on vapaa alukselle
+		while (i > 0) {
+			if (x >= 0 && x <= 9 && y >= 0 && y <= 9) {	//pysyt‰‰nh‰n taulukossa
+
+				if (iteration == true) {
+					//setCell(x, y);
+				}
+
+				//Valitaan suunan mukaan seuraava solu
+				switch (rotation) {
+				case 0:
+					x++;
+					break;
+				case 1:
+					x++;
+					y--;
+					break;
+				case 2:
+					y--;
+					break;
+				case 3:
+					x--;
+					y--;
+					break;
+				case 4:
+					x--;
+					break;
+				case 5:
+					x--;
+					y++;
+					break;
+				case 6:
+					y++;
+					break;
+				case 7:
+					x++;
+					y++;
+					break;
+				}
+
+				i--;
+
+			} else {
+				return false; //Mentiin taulukon yli
+			}
+		}
+
+		if (iteration == true) {
+			return true; //Alus on asetettu. Palataan-->
+		}
+
+		//Alue on vapaa, joten asetetaan aluksen osat soluihin iteroimalla funktiota itse‰‰n
+		//unohtamatta palautusta
+		return setShip(from_x, from_y, rotation, size, true);
+	}
+
+
+	bool GetShipCell(int x, int y) {
+		return shipArray[y * 10 + x];
+	}
+
+	bool GetShipFreeCell(int x, int y) {
+		return shipArrayFree[y * 10 + x];
+	}
+
+	bool * GetShipArray() {
+		return shipArray;
+	}
+	bool * GetMissileArray() {
+		return missileArray;
+	}
+
+	void GiveArrayPointers(bool*shipArray_, bool*missileArray_) {
+		shipArray = shipArray_;
+		missileArray = missileArray_;
+		//delete shipArray_;
+		//delete missileArray_;
 	}
 };
 
@@ -180,16 +267,28 @@ class SaveHandler {
 
 public:
 
+	SaveHandler() {
+		board_p_ship_data     = new bool[100]();
+		board_p_missile_data  = new bool[100]();
+		board_c_ship_data     = new bool[100]();
+		board_c_missile_data  = new bool[100]();
+	}
+
 	void LoadDataFromSaveFile() {
 		try {
 			ifstream file_;
 				file_.open(saveFileName);
 
 				if (file_.is_open()) {
-					board_p_ship_data = ReadSingleBoard(file_);
-					board_p_missile_data = ReadSingleBoard(file_);
-					board_c_ship_data = ReadSingleBoard(file_);
-					board_c_missile_data = ReadSingleBoard(file_);
+					cout << "\nPelaajan Alus Data :";
+					PopulateSingleBoard(file_, board_p_ship_data);
+					cout << "\nPelaajan Ohjus Data:";
+					PopulateSingleBoard(file_, board_p_missile_data);
+					cout << "\nNPC Alus Data      :";
+					PopulateSingleBoard(file_, board_c_ship_data);
+					cout << "\nNPC Ohjus Data     :";
+					PopulateSingleBoard(file_, board_c_missile_data);
+					cout << "\n";
 				}
 				else {
 					std::cout << "Cant open save file";
@@ -204,56 +303,40 @@ public:
 	}
 
 	///Luetaan yksi 10x10 data-alue tiedostosta. Palatus
-	bool* ReadSingleBoard(ifstream & file) {
-		bool* bool_array = new bool[100];
-		int i = 0;
-		char character;
+	void PopulateSingleBoard(ifstream & file, bool* bool_array) {
+		if (bool_array == nullptr) {
+			exit(99);
+		}
+		char character = 'o';
+
 
 		//K‰yd‰‰n l‰pi 100 seuraavaa kirjainta
-		while (file >> skipws >> character && i < 100){
-			if (character == 'o') {
-				bool_array[i] = false;
-			}
-			else if (character == 'x') {
-				bool_array[i] = true;
-			}
-			else if (character == '\n') {
-				bool_array[i] = true;
-			}
-			else {
-				std::cout << "There's something wrong with save file (board):>" << character << "<\n";
-			}
-			i++;
-		}
+		for (int i = 0; i <= 99; i){
+			file >> skipws >> character;
+			if (character == 'o'  || character == 'x') {
+				if (i % 10 == 0) {
+					cout << "\n";
+				}
+				cout << character;
+				if (character == 'o')
+					bool_array[i] = false;
+				if (character == 'x')
+					bool_array[i] = true;
 
-		return bool_array;
+
+				i++;
+			} else {
+				std::cout << "There's something wrong with save file (board):>" << character << "<\n";
+				i++;
+			}
+		}
 	}
 
 	///Board, True/False(True jos pelaajan lauta, false jos cpu lauta.
-	void FillBoardData(Board& board, bool player) {
-		int i = 0;
-		//Luodaan laudat passattavaksi
-		bool ship_board[10][10];
-		bool missile_board[10][10];
-
-		for (int y = 0; y < 10; y++) {
-			for (int x = 0; x < 10; x++) {
-				if (player == true) {
-					ship_board[x][y] = board_p_ship_data[i];
-					missile_board[x][y] = board_p_missile_data[i];
-				}
-				else {
-					ship_board[x][y] = board_c_ship_data[i];
-					missile_board[x][y] = board_c_missile_data[i];
-					i++;
-				}
-			}
-		}
-
-		board.setShips(*ship_board);
-		board.setMissiles(*missile_board);
+	void FillBoardData(Board* player_board, Board* cpu_board) {
+		(*player_board).GiveArrayPointers(board_p_ship_data, board_p_missile_data);
+		(*cpu_board).GiveArrayPointers(board_c_ship_data, board_c_missile_data);
 	}
-
 };
 
 class HighScoreManager {
@@ -330,6 +413,24 @@ public:
 	}
 };
 
+class AI {
+	Board* board;
+
+public:
+	void GiveBoard(Board * board_) {
+		board = board_;
+	}
+
+	void PlaceShips(Board* board_) {
+		board = board_;
+		bool success = (*board_).setShip(5, 5, 7, 3, false);
+
+		system("cls");
+
+
+	};
+
+};
 
 void uuden_puskurin_testaus() {
 	CONST int WIDTH = 70;
@@ -381,34 +482,55 @@ void uuden_puskurin_testaus() {
 
 class GameLogic {
 	bool gameLooping = true;
-	Board playerBoard;
-	Board cpuBoard;
+	Board *playerBoard;
+	Board *cpuBoard;
+	AI ai;
 
 public:
 	void PrepareNewGame() {
 		//Yhteiset
-		playerBoard = Board();
-		cpuBoard = Board();
+		playerBoard = new Board();
+		cpuBoard = new Board();
 
 		//omat
-		playerBoard.InitiateArrays();
-		cpuBoard.InitiateArrays();
+		(*playerBoard).FillArraysWithFalse();
+		(*cpuBoard).FillArraysWithFalse();
+
+		//Anna AI:n asettaa alukset. (anna pointer laudasta)
+		ai.PlaceShips(cpuBoard);
 
 	}
 	void PrepareContinue(SaveHandler saveHandler) {
 		//Yhteiset
-		playerBoard = Board();
-		cpuBoard = Board();
+		playerBoard = new Board();
+		cpuBoard = new Board();
 
 		//Latauksen omat
 		saveHandler.LoadDataFromSaveFile();
-		saveHandler.FillBoardData(playerBoard, true);
-		saveHandler.FillBoardData(cpuBoard, false);
+		saveHandler.FillBoardData(playerBoard, cpuBoard);
+
+
+		cout << "test-"<<(*playerBoard).shipArray[1]<<"-test";
 	}
+
 	void GameLoop() {
+
 		while (gameLooping == true) {
+			gameLooping = false;
+
+			cout << "\n\nGame loop.";
+			cout << "\n\n";
+			for (int y = 0; y <= 9; y++) {
+				for (int x = 0; x <= 9; x++) {
+					cout << (*playerBoard).GetShipCell(x, y);
+				}
+				cout << "\n";
+			}
 			//LOOP
 		}
+		cout << "\n";
+		cout << "\nExiting game loop\n";
+		cout << "\n";
 	}
 };
 
@@ -417,7 +539,7 @@ int main(void) {
 	//Lataa highscoret
 	HighScoreManager highScoreManager = HighScoreManager("scores.txt", 10);
 	SaveHandler saveHandler = SaveHandler();
-	GameLogic gameLogic = GameLogic();
+	GameLogic gameLogic;
 
 	string inputString = "";	//Syˆttˆ
 	bool mainLoop = true;		//Silmukkaa varten
@@ -435,10 +557,13 @@ int main(void) {
 
 		if (inputString == "N" || inputString == "n") {
 			std::cout << "New game\n";
+			gameLogic.PrepareNewGame();
+			gameLogic.GameLoop();
 		}
 		else if (inputString == "C" || inputString == "c") {
 			std::cout << "Loading game.\n";
 			gameLogic.PrepareContinue(saveHandler);
+			gameLogic.GameLoop();
 		}
 		else if (inputString == "H" || inputString == "h") {
 			highScoreManager.PrintHighScores();
