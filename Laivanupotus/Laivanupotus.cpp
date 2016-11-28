@@ -11,6 +11,8 @@
 
 #include<fstream> //Tiedostojen luku, highscore
 
+//GetConsoleHeightiä varten. Kertoo että windows yli win2000
+#define _WIN32_WINNT 0x0500
 
 HANDLE writeHandle;
 HANDLE readHandle;
@@ -23,6 +25,12 @@ bool DEBUGGING = true;
 class Display {
 	public:
 
+		char symbol_ship = '#';
+		char symbol_nonfree = 'x';
+		char symbol_free = '.';
+
+		char border_symbol = '#';
+
 		//Constructor -asetetaan luokkamuuttujat.
 		Display(int x, int y, int sx, int sy)
 			: battlefield_size_x(x), battlefield_size_y(y), screen_size_x(sx), screen_size_y(sy)
@@ -34,8 +42,8 @@ class Display {
 			}
 
 			//Alustetaan ruutu
-			ClearScreen();
-			BlitScreenBorders();
+			ClearBuffer();
+			AddBordersToBuffer();
 		}
 
 		void DrawScreen() {
@@ -49,9 +57,91 @@ class Display {
 		}
 
 		void BlitTextAt(int screen_x_position, int screen_y_position, string text) {
-			int rows_to_loop = text.length();
-			for (int x = screen_x_position; x < rows_to_loop; x++)
-				screen_buffer[x][screen_y_position] = text[x];
+			int chars_to_loop = text.length();
+			for (int x = 0; x < chars_to_loop; x++)
+				screen_buffer[x+screen_x_position][screen_y_position] = text[x];
+		}
+
+		void BlitAndDraw(int screen_x_position, int screen_y_position, string text) {
+			BlitTextAt (screen_x_position, screen_y_position, text);
+			DrawScreen();
+		}
+
+
+		void ClearBuffer() {
+			for (int y = 0; y < screen_size_y; y++) {
+				for (int x = 0; x < screen_size_x; x++) {
+					screen_buffer[x][y] = " ";
+				}
+			}
+
+		}
+
+		//Luo reunukset näytölle. symbol muuttujalla voi asettaa merkin jolla piirretään
+		void AddBordersToBuffer(char symbol = 'a') {
+			if (symbol == 'a')
+				symbol = border_symbol;
+			for (int y = 0; y < screen_size_y; y++) {
+				for (int x = 0; x < screen_size_x; x++) {
+					//Yläreuna
+					if (y == 0)
+						screen_buffer[x][y] = symbol;
+					//Alareuna
+					if (y == screen_size_y - 1)
+						screen_buffer[x][y] = symbol;
+					//Vasen
+					if (x == 0)
+						screen_buffer[x][y] = symbol;
+					//Oikea
+					if (x == screen_size_x - 1)
+						screen_buffer[x][y] = symbol;
+				}
+			}
+
+		}
+
+		///Piirtää pelilaudan haluamaan kohtaan.
+		///mode:0=
+		void BlitBoard(int *visibleBoard, int position_x, int position_y, string size = "2x2",
+			int mode = 0 ) {
+			string row = "";
+			int print_row_number = 0;
+			int mode_dependent_int;
+
+			if (mode == 0) {
+				for (int y = 0; y <= 10 - 1; y++) {
+					row = "";
+					for (int x = 0; x <= 10 - 1; x++) {
+						mode_dependent_int = visibleBoard[y * 10 + x];
+						if (mode_dependent_int == 0) {
+							row += symbol_free;
+							if (size == "2x2")
+								row += symbol_free;
+						}
+						if (mode_dependent_int == 1) {
+							row += symbol_ship;
+							if (size == "2x2")
+								row += symbol_ship;
+						}
+						if (mode_dependent_int == 2) {
+							row += symbol_nonfree;
+							if (size == "2x2")
+								row += symbol_nonfree;
+						}
+						if (x<9 && size == "2x2")
+							row += " ";
+					}
+					BlitTextAt(position_x, position_y + print_row_number, row);
+					print_row_number++;
+					if (size == "2x2") {
+						BlitTextAt(position_x, position_y + print_row_number, row);
+						print_row_number++;
+					}
+					if (y < 9 && size == "2x2") {
+						print_row_number++;
+					}
+				}
+			}
 		}
 
 	private:
@@ -63,40 +153,16 @@ class Display {
 
 		string **screen_buffer;
 
-		void ClearScreen() {
-			for (int y = 0; y < screen_size_y; y++) {
-				for (int x = 0; x < screen_size_x; x++) {
-					screen_buffer[x][y] = " ";
-				}
-			}
 
-		}
-
-		void BlitScreenBorders() {
-			for (int y = 0; y < screen_size_y; y++) {
-				for (int x = 0; x < screen_size_x; x++) {
-					//Yläreuna
-					if (y == 0)
-						screen_buffer[x][y] = "#";
-					//Alareuna
-					if (y == screen_size_y-1)
-						screen_buffer[x][y] = "#";
-					//Vasen
-					if (x == 0)
-						screen_buffer[x][y] = "#";
-					//Oikea
-					if (x == screen_size_x-1)
-						screen_buffer[x][y] = "#";
-				}
-			}
-
-		}
 
 
 };
 
+
+Display display = Display(10, 10, 80, 31);
+
 class Animation {
-	//////public:
+	public:
 		void PlayWelcomeAnimation(Display display) {
 
 			//Piirretään ruutu, jotta saadaan kehykset näkyviin.
@@ -149,8 +215,11 @@ public:
 	bool * missileArray;			//Pitää sisällään ohjukset
 	bool * shipArrayFree;
 
+	int * visibleArray;
+
 	Board() {
 		shipArrayFree = new bool[100]();
+		visibleArray = new int[100]();
 	}
 
 	//Luo taulukot tyhjästä
@@ -306,6 +375,33 @@ public:
 		//delete shipArray_;
 		//delete missileArray_;
 	}
+
+	///Moodi:0=piirretään alukset ja varatut alueet. 1-alus, 2-varattu
+	///Moodi:1=piirretään alukset.                   1-alus
+	int* GetVisibleArray(int mode) {
+		for (int x = 0; x <= 10 - 1; x++) {
+			for (int y = 0; y <= 10 - 1; y++) {
+				visibleArray[y * 10 + x] = 0;
+
+				//0 - Alukset ja niiden päälle vapaa alue
+				if (mode == 0) {
+					//Varattu
+					if (shipArrayFree[y * 10 + x] == true)
+						visibleArray[y * 10 + x] = 2;
+					//Alus
+					if (shipArray[y * 10 + x] == true)
+						visibleArray[y * 10 + x] = 1;
+				}
+				//1 - Alukset
+				if (mode == 1) {
+					//Alus
+					if (shipArray[y * 10 + x] == true)
+						visibleArray[y * 10 + x] = 1;
+				}
+			}
+		}
+		return visibleArray;
+	}
 };
 
 class SaveHandler {
@@ -331,15 +427,10 @@ public:
 				file_.open(saveFileName);
 
 				if (file_.is_open()) {
-					cout << "\nPelaajan Alus Data :";
 					PopulateSingleBoard(file_, board_p_ship_data);
-					cout << "\nPelaajan Ohjus Data:";
 					PopulateSingleBoard(file_, board_p_missile_data);
-					cout << "\nNPC Alus Data      :";
 					PopulateSingleBoard(file_, board_c_ship_data);
-					cout << "\nNPC Ohjus Data     :";
 					PopulateSingleBoard(file_, board_c_missile_data);
-					cout << "\n";
 				}
 				else {
 					std::cout << "Cant open save file";
@@ -365,10 +456,6 @@ public:
 		for (int i = 0; i <= 99; i){
 			file >> skipws >> character;
 			if (character == 'o'  || character == 'x') {
-				if (i % 10 == 0) {
-					cout << "\n";
-				}
-				cout << character;
 				if (character == 'o')
 					bool_array[i] = false;
 				if (character == 'x')
@@ -472,7 +559,21 @@ public:
 		board = board_;
 	}
 
-	bool PlaceShips() {
+	///AI alusten asetus algoritmi.
+	///debugging_showsteps (true) näyttää kohta kohdalta alusten laiton.
+
+	bool PlaceShips(bool debugging_showsteps) {
+		display.ClearBuffer();
+		display.AddBordersToBuffer();
+		display.BlitTextAt(3, 3, "Starting the ship placement alghoritm.");
+		display.BlitTextAt(3, 4, "Printing the board.");
+		
+		display.BlitBoard((*board).GetVisibleArray(0), 40,1,"2x2",0);
+		display.DrawScreen();
+
+		string dirtytemp;
+		std::cin >> dirtytemp;
+
 		bool alukset_asetettu = false;
 		int varo_laskuri = 20; //Mikäli jokin menee pieleen, ei jää luuppaamaan ikuisiksi ajoiksi.
 		bool result;
@@ -537,6 +638,8 @@ public:
 			}
 
 			varo_laskuri--;
+			if (varo_laskuri == 0)
+				break;
 		}
 
 		//Kaikki on mennyt hyvin jos päästiin tänne asti
@@ -635,10 +738,16 @@ public:
 
 	void PrepareNewGame() {
 
+
 		//Luodaan laudat-----------------------------------------
 		//Yhteiset
+
+		if (DEBUGGING)
+			display.BlitAndDraw(2, 4, "-Creating boards");
+
 		playerBoard = new Board();
 		cpuBoard = new Board();
+
 
 		//omat
 		(*playerBoard).FillArraysWithFalse();
@@ -646,7 +755,24 @@ public:
 		//-------------------------------------------------------
 		//Anna AI:n asettaa alukset. (anna pointer laudasta)
 		ai.GiveBoard(cpuBoard);
-		ai.PlaceShips();
+
+		if (DEBUGGING) {
+			display.BlitAndDraw(2, 5, "-Making AI place ships.. Hopefully");
+			display.BlitAndDraw(2, 6, "-Do you want to see the progress step by step? (Y/N)");
+		}
+
+		string answer;
+		bool debugging_showsteps = false;;
+		std::cin >> answer;
+		if (answer == "y" || answer == "Y") {
+			display.BlitAndDraw(2, 7, "Ok. showing steps.");
+			debugging_showsteps = true;
+		}
+		else {
+			display.BlitAndDraw(2, 7, "Skipping step by step display.");
+		}
+
+		ai.PlaceShips(debugging_showsteps);
 
 	}
 	void PrepareContinue(SaveHandler saveHandler) {
@@ -658,42 +784,56 @@ public:
 		saveHandler.LoadDataFromSaveFile();
 		saveHandler.FillBoardData(playerBoard, cpuBoard);
 
-
-		cout << "test-"<<(*playerBoard).shipArray[1]<<"-test";
 	}
 
 	void GameLoop() {
 
 		while (gameLooping == true) {
 			gameLooping = false;
+			display.ClearBuffer();
+			display.AddBordersToBuffer();
 
-			cout << "\n\nGame loop.";
-			cout << "\n\n";
-			cout << "Player:Ship board\n";
-			for (int y = 0; y <= 9; y++) {
-				for (int x = 0; x <= 9; x++) {
-					cout << (*playerBoard).GetShipCell(x, y);
-				}
-				cout << "\n";
-			}
-			cout << "CPU:Ship board\n";
-			for (int y = 0; y <= 9; y++) {
-				for (int x = 0; x <= 9; x++) {
-					cout << (*cpuBoard).GetShipCell(x, y);
-				}
-				cout << "\n";
-			}
-			//LOOP
+			display.BlitTextAt(2, 4, "-Showing temporary board setup");
+			display.BlitTextAt(45, 2, "Player board:");
+			display.BlitTextAt(59, 2, "Cpu board:");
+
+			display.BlitBoard((*playerBoard).GetVisibleArray(0), 45, 3, "1x1", 0);
+			display.BlitBoard((*cpuBoard).GetVisibleArray(0), 59, 3, "1x1", 0);
+
+			display.BlitTextAt(2, 5, "Type anything to end the preview.");
+
+			display.DrawScreen();
+
+			string dump;
+			std::cin >> dump;
+
 		}
-		cout << "\n";
-		cout << "\nExiting game loop\n";
-		cout << "\n";
 	}
 };
 
 
+
 int main(void) {
 	srand(time(0));
+
+	//TEMP
+
+	HWND console = GetConsoleWindow();
+	RECT r;
+	GetWindowRect(console, &r); //stores the console's current dimensions
+
+	//MoveWindow(window_handle, x, y, width, height, redraw_window);
+	MoveWindow(console, r.left, r.top, 800, 430, TRUE);
+
+
+
+
+	//TEMP
+
+
+
+	Animation animation = Animation();
+
 
 	//Lataa highscoret
 	HighScoreManager highScoreManager = HighScoreManager("scores.txt", 10);
@@ -707,20 +847,35 @@ int main(void) {
 	//Pääsilmukka
 	while (mainLoop) {
 
-		std::cout << "N: New Game\n";
-		std::cout << "C: Continue\n";
-		std::cout << "H: High scores\n";
-		std::cout << "Q: Exit\n";
+		display.ClearBuffer();
+		animation.PlayWelcomeAnimation(display);
+		display.AddBordersToBuffer();
 
+		display.BlitTextAt(3, 11, "N: New Game");
+		display.BlitTextAt(3, 12, "C: Continue");
+		display.BlitTextAt(3, 13, "H: High scores");
+		display.BlitTextAt(3, 14, "Q: Exit");
+
+		display.DrawScreen();
+
+		std::cout << "Input:>";
 		std::cin >> inputString;
 
 		if (inputString == "N" || inputString == "n") {
-			std::cout << "New game\n";
+			display.ClearBuffer();
+			display.AddBordersToBuffer();
+			display.BlitAndDraw(2, 2, "New game");
+			if (DEBUGGING)
+				display.BlitAndDraw(2, 3, "-Entering PrepareNewGame");
 			gameLogic.PrepareNewGame();
 			gameLogic.GameLoop();
 		}
 		else if (inputString == "C" || inputString == "c") {
-			std::cout << "Loading game.\n";
+			display.ClearBuffer();
+			display.AddBordersToBuffer();
+			display.BlitAndDraw(2, 2, "Loading game");
+			if (DEBUGGING)
+				display.BlitAndDraw(2, 3, "-Entering PrepareContinue");
 			gameLogic.PrepareContinue(saveHandler);
 			gameLogic.GameLoop();
 		}
