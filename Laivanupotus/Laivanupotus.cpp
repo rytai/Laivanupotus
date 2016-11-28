@@ -17,6 +17,8 @@ HANDLE readHandle;
 
 using namespace std;
 
+bool DEBUGGING = true;
+
 //Sis‰ltaa metodit ruudun piirtamiseen.
 class Display {
 	public:
@@ -145,7 +147,11 @@ class Board {
 public:
 	bool * shipArray;				//Pit‰‰ sis‰ll‰‰n alukset
 	bool * missileArray;			//Pit‰‰ sis‰ll‰‰n ohjukset
-	bool * shipArrayFree = new bool[100]();
+	bool * shipArrayFree;
+
+	Board() {
+		shipArrayFree = new bool[100]();
+	}
 
 	//Luo taulukot tyhj‰st‰
 	void FillArraysWithFalse() {
@@ -164,12 +170,42 @@ public:
 		shipArray[y * 10 + x] = true;
 		//solun ymp‰rilt‰ varataan kaikki solut, jotta ei pystyisi laittamaan aluksia
 		//kyljitt‰in
+		/*
 		for (int x_ = -1; x_ <= 1; x_++) {
 			for (int y_ = -1; y_ <= 1; y_++) {
+				if (x_ == y_ || )
 				shipArrayFree[(y + y_) * 10 + x + x_] = true;
 			}
 		}
+		*/
+		shipArrayFree[y * 10 + x] = true;
+		shipArrayFree[(y - 1) * 10 + x + 0] = true;
+		shipArrayFree[(y) * 10 + x+ 1] = true;
+		shipArrayFree[(y) * 10 + x+ -1] = true;
+		shipArrayFree[(y+1) * 10 + x +0] = true;
 	}
+
+	///Palauttaa false jos ruutua, tai sen ymp‰ristˆ‰ ei ole varattu
+	bool CheckCellSurroundingsReserved(int x, int y) {
+
+		for (int x_ = -1; x_ <= 1; x_++) {
+			for (int y_ = -1; y_ <= 1; y_++) {
+				x = x + x_;
+				y = y + y_;
+				//Ensin katsotaan onko tarkistettava solu taulukon sis‰ll‰
+				if (x >= 0 && x <= 9 && y >= 0 && y <= 9) {
+					if (shipArrayFree[y * 10 + x] == true) { //Jos ymp‰rˆiv‰ss‰ ruudussa on jotain, ei alusta voida asettaa.
+						if (DEBUGGING)
+							//std::cout << "DEB: ---Cell blocked: " << x << ", " << y << "\n";
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
+	}
+
 
 	///X,Y,Rotaatio(oikea=0 ja siit‰ myˆt‰p‰iv‰‰n), koko. Palauttaa false jos ei onnistunut.
 	bool setShip(int from_x, int from_y, int rotation, int size, bool iteration = false) {
@@ -177,12 +213,23 @@ public:
 		int y = from_y;
 		int i = size;
 
-		//tarkistetaan, ett‰ alue on vapaa alukselle
+		//K‰yd‰‰n iteroimalla ruutu ruudulta l‰pi alukselle varattava alue.
 		while (i > 0) {
-			if (x >= 0 && x <= 9 && y >= 0 && y <= 9) {	//pysyt‰‰nh‰n taulukossa
+			if (x >= 0 && x <= 9 && y >= 0 && y <= 9) {	//pysyt‰‰nh‰n 10x10 koordinaateissa
 
+
+				//Kaikki iteroinnit k‰yty l‰pi onnistuneesti. Asetetaan yksi kerrallaan aluksen palat.
 				if (iteration == true) {
-					//setCell(x, y);
+					setCell(x, y);
+				}
+				else {
+					//Tarkistetaan solu ja sen ymp‰ristˆ, eli ett‰ onko tilaa
+					if (CheckCellSurroundingsReserved(x, y) == true) {
+						if (DEBUGGING) {
+							//std::cout << "DEB: Failed to put ship like this: x:" << from_x << " y:" << from_y << " rotation: " << rotation<<"\n";
+						}
+						return false;
+					}
 				}
 
 				//Valitaan suunan mukaan seuraava solu
@@ -220,6 +267,10 @@ public:
 				i--;
 
 			} else {
+				if (DEBUGGING == true) {
+					std::cout << "DEB: Failed to put ship like this: x:" << from_x << " y:" << from_y << " rotation: " << rotation;
+					std::cout << " size:" << size << " iter:" << iteration << "\n";
+				}
 				return false; //Mentiin taulukon yli
 			}
 		}
@@ -421,15 +472,109 @@ public:
 		board = board_;
 	}
 
-	void PlaceShips(Board* board_) {
-		board = board_;
-		bool success = (*board_).setShip(5, 5, 7, 3, false);
+	bool PlaceShips() {
+		bool alukset_asetettu = false;
+		int varo_laskuri = 20; //Mik‰li jokin menee pieleen, ei j‰‰ luuppaamaan ikuisiksi ajoiksi.
+		bool result;
 
-		system("cls");
+		//Kuinka paljon aluksia asetetaan.
+		int carriers = 1;
+		int battleships = 2;
+		int cruisers = 3;
+		int destroyers = 4;
+		int submarines = 5;
 
+		std::cout << "CPU Asettaa aluksia.\n";
+		while (alukset_asetettu == false || varo_laskuri == 0) {
+
+			//5 Pituiset
+			if (carriers >= 1) {
+				result = PlaceSingleShipRandomly(board, 5, carriers);
+				if (result == false) {
+					std::cout << "Error while placing battleships.";
+					return false;
+				}
+				carriers = 0;
+				//4 Pituiset
+			}
+			else if (battleships >= 1) {
+				result = PlaceSingleShipRandomly(board, 4, battleships);
+				if (result == false) {
+					std::cout << "Error while placing battleships.";
+					return false;
+				}
+				battleships = 0;
+			}
+			//3 Pituiset
+			else if (cruisers >= 1) {
+				result = PlaceSingleShipRandomly(board, 3, cruisers);
+				if (result == false) {
+					std::cout << "Error while placing cruisers.";
+					return false;
+				}
+				cruisers = 0;
+			}
+			//2 Pituiset
+			else if (destroyers >= 1) {
+				result = PlaceSingleShipRandomly(board, 2, destroyers);
+				if (result == false) {
+					std::cout << "Error while placing destroyers.";
+					return false;
+				}
+				destroyers = 0;
+			}
+			//1 Pituiset
+			else if (submarines >= 1) {
+				result = PlaceSingleShipRandomly(board, 1, submarines);
+				if (result == false) {
+					std::cout << "Error while placing submarines.";
+					return false;
+				}
+				submarines = 0;
+			}
+			else {
+				alukset_asetettu = true;
+			}
+
+			varo_laskuri--;
+		}
+
+		//Kaikki on mennyt hyvin jos p‰‰stiin t‰nne asti
+		return true;
 
 	};
 
+	bool PlaceSingleShipRandomly(Board* board, int size, int amount) {
+		int try_count;
+		bool ship_placed;
+
+		int ship_location_x;
+		int ship_location_y;
+		int ship_rotation;
+
+		while (amount >= 1) { //Kuinka monta alusta laitetaan?
+			try_count = 1;
+			ship_placed = false;
+			while (ship_placed == false && try_count <= 100) {
+				//Arvotaan random sijainnit
+				ship_location_x = rand() % 10;
+				ship_location_y = rand() % 10;
+				ship_rotation = rand() % 8;
+				//Yritet‰‰n asettaa alusta.
+				ship_placed = (*board).setShip(ship_location_x, ship_location_y, ship_rotation, size);
+
+				try_count++;
+			}
+
+			if (DEBUGGING) {
+				std::cout << "Asetettu alus :" << size << " " << try_count << " yrityksell‰\n";
+			}
+			if (ship_placed)
+				amount--;
+		}
+
+		return true;
+	};
 };
 
 void uuden_puskurin_testaus() {
@@ -439,7 +584,7 @@ void uuden_puskurin_testaus() {
 	int x, y;
 
 	// Annetaan random seed satunnaislukugeneraattorille.
-	//srand(time(0));-----------------------------------------------------------------------------------------
+	//-----------------------------------------------------------------------------------------
 
 	//Ikkunan koko, nollaindeksi
 	SMALL_RECT windowSize = { 0, 0, WIDTH - 1, HEIGHT - 1 };
@@ -482,12 +627,15 @@ void uuden_puskurin_testaus() {
 
 class GameLogic {
 	bool gameLooping = true;
-	Board *playerBoard;
-	Board *cpuBoard;
 	AI ai;
 
 public:
+	Board *playerBoard;
+	Board *cpuBoard;
+
 	void PrepareNewGame() {
+
+		//Luodaan laudat-----------------------------------------
 		//Yhteiset
 		playerBoard = new Board();
 		cpuBoard = new Board();
@@ -495,9 +643,10 @@ public:
 		//omat
 		(*playerBoard).FillArraysWithFalse();
 		(*cpuBoard).FillArraysWithFalse();
-
+		//-------------------------------------------------------
 		//Anna AI:n asettaa alukset. (anna pointer laudasta)
-		ai.PlaceShips(cpuBoard);
+		ai.GiveBoard(cpuBoard);
+		ai.PlaceShips();
 
 	}
 	void PrepareContinue(SaveHandler saveHandler) {
@@ -520,9 +669,17 @@ public:
 
 			cout << "\n\nGame loop.";
 			cout << "\n\n";
+			cout << "Player:Ship board\n";
 			for (int y = 0; y <= 9; y++) {
 				for (int x = 0; x <= 9; x++) {
 					cout << (*playerBoard).GetShipCell(x, y);
+				}
+				cout << "\n";
+			}
+			cout << "CPU:Ship board\n";
+			for (int y = 0; y <= 9; y++) {
+				for (int x = 0; x <= 9; x++) {
+					cout << (*cpuBoard).GetShipCell(x, y);
 				}
 				cout << "\n";
 			}
@@ -536,6 +693,8 @@ public:
 
 
 int main(void) {
+	srand(time(0));
+
 	//Lataa highscoret
 	HighScoreManager highScoreManager = HighScoreManager("scores.txt", 10);
 	SaveHandler saveHandler = SaveHandler();
