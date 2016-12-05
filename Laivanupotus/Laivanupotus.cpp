@@ -11,6 +11,8 @@
 
 #include<fstream> //Tiedostojen luku, highscore
 
+#include <sstream> //Merkkijonojen muokkaamista varten
+
 //GetConsoleHeightiä varten. Kertoo että windows yli win2000
 #define _WIN32_WINNT 0x0500
 
@@ -20,26 +22,56 @@ HANDLE readHandle;
 using namespace std;
 
 bool DEBUGGING = true;
+ofstream logfile;
 
 //Sisältaa metodit ruudun piirtamiseen.
 class Display {
 	public:
 
-		char symbol_ship = '#';
-		char symbol_nonfree = 'x';
-		char symbol_free = '.';
+		const char symbol_ship    = '#';
+		const char symbol_nonfree = 'x';
+		const char symbol_free    = '.';
 
-		char border_symbol = '#';
+		const char border_symbol  = '#';
+		
+		stringstream inputStream;
 
+		const int BLITTYPE_DEFAULT = 0;
+		const int BLITTYPE_LASTPOS = 1;
+		const int BLITTYPE_CONSOLE = 2;
+
+		COORD consoleWriteLocation;
+		int consoleMinRow;
+		int consoleMaxRow;
+		COORD dummyLocation;
+		COORD boardLocation2x2;
+		COORD zeroLocation;
+
+		HANDLE writeHandle;
+		HANDLE readHandle;
+		
 		//Constructor -asetetaan luokkamuuttujat.
 		Display(int x, int y, int sx, int sy)
 			: battlefield_size_x(x), battlefield_size_y(y), screen_size_x(sx), screen_size_y(sy)
 		{
+
+			writeHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+			readHandle = GetStdHandle(STD_INPUT_HANDLE);
+
 			//Luodaan kaksi ulotteinen array näyttöpuskuriksi
 			screen_buffer = new string*[screen_size_x];
 			for (int x = 0; x < screen_size_x; x++) {
 				screen_buffer[x] = new string[screen_size_y];
 			}
+
+			//Tyypillisen teksti outputin sijainti
+			consoleMinRow = 2; //Kolmas rivi
+			consoleMaxRow = (screen_size_y-1) - 2; //Kolmanneksi alin
+			consoleWriteLocation.X = consoleMinRow;
+			consoleWriteLocation.Y = 2;
+
+			zeroLocation.X = 0;
+			zeroLocation.Y = 0;
 
 			//Alustetaan ruutu
 			ClearBuffer();
@@ -47,6 +79,8 @@ class Display {
 		}
 
 		void DrawScreen() {
+
+			SetConsoleCursorPosition(writeHandle, zeroLocation);
 			for (int y = 0; y < screen_size_y; y++) {
 				for (int x = 0; x < screen_size_x; x++)
 				{
@@ -62,17 +96,51 @@ class Display {
 				screen_buffer[x+screen_x_position][screen_y_position] = text[x];
 		}
 
-		void BlitAndDraw(int screen_x_position, int screen_y_position, string text) {
-			BlitTextAt (screen_x_position, screen_y_position, text);
-			DrawScreen();
+		void BlitAndDraw(int screen_x_position, int screen_y_position, string text){ 
+			COORD position;
+			position.X = screen_x_position;
+			position.Y = screen_y_position;
+
+			BlitTextAt(position.X, position.Y, text);
+
+			SetConsoleCursorPosition(writeHandle, position);
+			std::cout << text;
+
+		}
+		//Using _InputStream_
+		void BlitAndDraw(int locationType, int x=0, int y = 0) {
+			COORD position;
+			if (locationType == BLITTYPE_CONSOLE) { //2-consolerow
+				position.X = consoleWriteLocation.X;
+				position.Y = ConsoleNextRow();
+			}
+			else if (locationType = BLITTYPE_DEFAULT) { //0-default
+				position.X = x;
+				position.Y = y;
+			}
+
+			string text = inputStream.str();
+			inputStream.str(string(""));
+
+			if (locationType != BLITTYPE_LASTPOS) {
+				BlitTextAt(position.X, position.Y, text);
+
+				SetConsoleCursorPosition(writeHandle, position);
+			}
+			std::cout << text;
+
 		}
 
 
-		void ClearBuffer() {
+		void ClearBuffer(bool addBorder = false) {
 			for (int y = 0; y < screen_size_y; y++) {
 				for (int x = 0; x < screen_size_x; x++) {
 					screen_buffer[x][y] = " ";
 				}
+			}
+
+			if (addBorder) {
+				AddBordersToBuffer();
 			}
 
 		}
@@ -144,6 +212,10 @@ class Display {
 			}
 		}
 
+		void ConsoleResetRow() {
+			consoleWriteLocation.Y = consoleMinRow;
+		}
+
 	private:
 		int battlefield_size_x;
 		int battlefield_size_y;
@@ -151,7 +223,29 @@ class Display {
 		int screen_size_x;
 		int screen_size_y;
 
+
 		string **screen_buffer;
+
+		int ConsoleNextRow() {
+			int previousRow = consoleWriteLocation.Y;
+			if (consoleWriteLocation.Y < consoleMaxRow) {
+				consoleWriteLocation.Y++;
+			}
+			else {
+				consoleWriteLocation.Y = consoleMinRow;
+			}
+			return previousRow;
+		}
+		int ConsolePrevRow() {
+			int previousRow = consoleWriteLocation.Y;
+			if (consoleWriteLocation.Y > consoleMinRow) {
+				consoleWriteLocation.Y--;
+			}else {
+				consoleWriteLocation.Y = consoleMaxRow;
+			}
+			return consoleWriteLocation.Y;
+		}
+
 
 
 
@@ -163,7 +257,7 @@ Display display = Display(10, 10, 80, 31);
 
 class Animation {
 	public:
-		void PlayWelcomeAnimation(Display display) {
+		void PlayWelcomeAnimation() {
 
 			//Piirretään ruutu, jotta saadaan kehykset näkyviin.
 			display.DrawScreen();
@@ -237,35 +331,31 @@ public:
 	//asettaa aluksen palan soluun ja varaa ympäriltä tilan, johon ei voi osaa laittaa.
 	void setCell(int x, int y) {
 		shipArray[y * 10 + x] = true;
-		//solun ympäriltä varataan kaikki solut, jotta ei pystyisi laittamaan aluksia
-		//kyljittäin
-		/*
-		for (int x_ = -1; x_ <= 1; x_++) {
-			for (int y_ = -1; y_ <= 1; y_++) {
-				if (x_ == y_ || )
-				shipArrayFree[(y + y_) * 10 + x + x_] = true;
-			}
-		}
-		*/
-		shipArrayFree[y * 10 + x] = true;
-		shipArrayFree[(y - 1) * 10 + x + 0] = true;
-		shipArrayFree[(y) * 10 + x+ 1] = true;
-		shipArrayFree[(y) * 10 + x+ -1] = true;
-		shipArrayFree[(y+1) * 10 + x +0] = true;
+			shipArrayFree[y * 10 + x] = true; // keskimmäinen
+			if (y>0) //ylös
+				shipArrayFree[(y - 1) * 10 + x + 0] = true;
+			if (x<9) //vasen
+				shipArrayFree[(y) * 10 + x + 1] = true;
+			if (x>0) //Vasen
+				shipArrayFree[(y) * 10 + x + -1] = true;
+			if (y<9) //alas
+				shipArrayFree[(y + 1) * 10 + x + 0] = true;
 	}
 
 	///Palauttaa false jos ruutua, tai sen ympäristöä ei ole varattu
 	bool CheckCellSurroundingsReserved(int x, int y) {
+		int checkX;
+		int checkY;
 
 		for (int x_ = -1; x_ <= 1; x_++) {
 			for (int y_ = -1; y_ <= 1; y_++) {
-				x = x + x_;
-				y = y + y_;
+				checkX = x + x_;
+				checkY = y + y_;
 				//Ensin katsotaan onko tarkistettava solu taulukon sisällä
-				if (x >= 0 && x <= 9 && y >= 0 && y <= 9) {
-					if (shipArrayFree[y * 10 + x] == true) { //Jos ympäröivässä ruudussa on jotain, ei alusta voida asettaa.
+				if (checkX >= 0 && checkX <= 9 && checkY >= 0 && checkY <= 9) {
+					if (shipArrayFree[checkY * 10 + checkX] == true) { //Jos ympäröivässä ruudussa on jotain, ei alusta voida asettaa.
 						if (DEBUGGING)
-							//std::cout << "DEB: ---Cell blocked: " << x << ", " << y << "\n";
+							logfile << "DEB: ---Cell blocked: " << checkX << ", " << checkY << "\n";
 						return true;
 					}
 				}
@@ -277,10 +367,14 @@ public:
 
 
 	///X,Y,Rotaatio(oikea=0 ja siitä myötäpäivään), koko. Palauttaa false jos ei onnistunut.
-	bool setShip(int from_x, int from_y, int rotation, int size, bool iteration = false) {
+	bool trySetShip(int from_x, int from_y, int rotation, int size, bool iterationsDone = false) {
 		int x = from_x;
 		int y = from_y;
 		int i = size;
+
+		if (DEBUGGING) {
+			logfile << "Trying to set ship size: " << size << " @ " << from_x << "," << from_y << " rot:" << rotation << " iter:" << iterationsDone << "\n";
+		}
 
 		//Käydään iteroimalla ruutu ruudulta läpi alukselle varattava alue.
 		while (i > 0) {
@@ -288,14 +382,14 @@ public:
 
 
 				//Kaikki iteroinnit käyty läpi onnistuneesti. Asetetaan yksi kerrallaan aluksen palat.
-				if (iteration == true) {
+				if (iterationsDone == true) {
 					setCell(x, y);
 				}
 				else {
 					//Tarkistetaan solu ja sen ympäristö, eli että onko tilaa
 					if (CheckCellSurroundingsReserved(x, y) == true) {
 						if (DEBUGGING) {
-							//std::cout << "DEB: Failed to put ship like this: x:" << from_x << " y:" << from_y << " rotation: " << rotation<<"\n";
+							logfile << "DEB: Failed to put ship like this: x:" << from_x << " y:" << from_y << " rotation: " << rotation<<"\n";
 						}
 						return false;
 					}
@@ -337,20 +431,20 @@ public:
 
 			} else {
 				if (DEBUGGING == true) {
-					std::cout << "DEB: Failed to put ship like this: x:" << from_x << " y:" << from_y << " rotation: " << rotation;
-					std::cout << " size:" << size << " iter:" << iteration << "\n";
+					logfile << "DEB: Over the coords: x:" << from_x << " y:" << from_y << " rotation: " << rotation;
+					logfile << " size:" << size << " iter:" << iterationsDone << "\n";
 				}
 				return false; //Mentiin taulukon yli
 			}
 		}
 
-		if (iteration == true) {
+		if (iterationsDone == true) {
 			return true; //Alus on asetettu. Palataan-->
 		}
 
-		//Alue on vapaa, joten asetetaan aluksen osat soluihin iteroimalla funktiota itseään
+		//Kerran tänne on päästy, alue on vapaa. Asetetaan aluksen osat soluihin iteroimalla itseään.
 		//unohtamatta palautusta
-		return setShip(from_x, from_y, rotation, size, true);
+		return trySetShip(from_x, from_y, rotation, size, true);
 	}
 
 
@@ -485,8 +579,8 @@ private:
 	string filename;
 
 	void LoadScoresFromFile() {
-		string hs_names[10];
-		int hs_scores[10];
+		hs_names = new string[10];
+		hs_scores = new int[10];
 
 		ifstream file(filename);
 		string name;
@@ -540,14 +634,34 @@ public:
 	};
 
 	void set_score_temp() {
+		string syote;
 		hs_names[2] = "kia";
 		hs_scores[2] = 9001;
 	}
 
 	void PrintHighScores() {
+		string line;
+
+		display.ClearBuffer(true);
+		display.DrawScreen();
+
+		COORD input_position;
+		input_position.X = 9;
+		input_position.Y = 30;
+
+		display.ConsoleResetRow();
+		display.BlitAndDraw(3, 3, "Highscores:");
+
 		for (int i = 0; i <= score_count - 1; i++) {
-			std::cout << hs_names[i] << " : " << hs_scores[i] << "\n";
+			line = hs_names[i] + " : " + std::to_string(hs_scores[i]);
+			display.BlitAndDraw(3, 5+i, line);
 		}
+
+		display.BlitAndDraw(3, 16, "Input anything to continue:");
+
+		std::cin >> line;
+		std::cin.clear();
+		std::cin.ignore(10000, '\n');
 	}
 };
 
@@ -563,83 +677,55 @@ public:
 	///debugging_showsteps (true) näyttää kohta kohdalta alusten laiton.
 
 	bool PlaceShips(bool debugging_showsteps) {
-		display.ClearBuffer();
-		display.AddBordersToBuffer();
-		display.BlitTextAt(3, 3, "Starting the ship placement alghoritm.");
-		display.BlitTextAt(3, 4, "Printing the board.");
-		
-		display.BlitBoard((*board).GetVisibleArray(0), 40,1,"2x2",0);
+		std::vector<int> shipsToPlace = { 5,4,4,3,3,3,2,2,2,2,1,1,1,1,1 };
+		int currentlyPlacingIndex = 0;
+		int currentlyPlacing;
+		bool shipPlaced = false;
+		std::stringstream output;
+		std::string output_s;
+
+		//Ruutu tyhjäksi
+		display.ClearBuffer(true);
 		display.DrawScreen();
 
-		string dirtytemp;
-		std::cin >> dirtytemp;
-
-		bool alukset_asetettu = false;
-		int varo_laskuri = 20; //Mikäli jokin menee pieleen, ei jää luuppaamaan ikuisiksi ajoiksi.
-		bool result;
-
-		//Kuinka paljon aluksia asetetaan.
-		int carriers = 1;
-		int battleships = 2;
-		int cruisers = 3;
-		int destroyers = 4;
-		int submarines = 5;
+		display.inputStream << "Starting the ship placement alghoritm.";
+		display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+		display.inputStream << "Printing the board.";
+		display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+		
+		if (debugging_showsteps) {
+			display.BlitBoard((*board).GetVisibleArray(0), 40, 1, "2x2", 0);
+		}
+		display.DrawScreen();
 
 		std::cout << "CPU Asettaa aluksia.\n";
-		while (alukset_asetettu == false || varo_laskuri == 0) {
+		while (currentlyPlacingIndex < shipsToPlace.size()-1) {
 
-			//5 Pituiset
-			if (carriers >= 1) {
-				result = PlaceSingleShipRandomly(board, 5, carriers);
-				if (result == false) {
-					std::cout << "Error while placing battleships.";
-					return false;
-				}
-				carriers = 0;
-				//4 Pituiset
-			}
-			else if (battleships >= 1) {
-				result = PlaceSingleShipRandomly(board, 4, battleships);
-				if (result == false) {
-					std::cout << "Error while placing battleships.";
-					return false;
-				}
-				battleships = 0;
-			}
-			//3 Pituiset
-			else if (cruisers >= 1) {
-				result = PlaceSingleShipRandomly(board, 3, cruisers);
-				if (result == false) {
-					std::cout << "Error while placing cruisers.";
-					return false;
-				}
-				cruisers = 0;
-			}
-			//2 Pituiset
-			else if (destroyers >= 1) {
-				result = PlaceSingleShipRandomly(board, 2, destroyers);
-				if (result == false) {
-					std::cout << "Error while placing destroyers.";
-					return false;
-				}
-				destroyers = 0;
-			}
-			//1 Pituiset
-			else if (submarines >= 1) {
-				result = PlaceSingleShipRandomly(board, 1, submarines);
-				if (result == false) {
-					std::cout << "Error while placing submarines.";
-					return false;
-				}
-				submarines = 0;
-			}
-			else {
-				alukset_asetettu = true;
-			}
+			//Pick the next ship
+			currentlyPlacing = shipsToPlace[currentlyPlacingIndex];
 
-			varo_laskuri--;
-			if (varo_laskuri == 0)
-				break;
+			shipPlaced = PlaceSingleShipRandomly(board, currentlyPlacing);
+
+			if (shipPlaced) {//Alus asetettu
+				display.inputStream << "Ship placed at:" << shipsToPlace[currentlyPlacingIndex];
+				display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+
+				//Laudan piirto
+				if (debugging_showsteps) {
+					display.BlitBoard((*board).GetVisibleArray(0), 40, 1, "2x2", 0);
+					display.DrawScreen();
+				}
+
+				if (debugging_showsteps) {
+					std::cin >> output_s;
+				}
+				//Next ship
+				currentlyPlacingIndex++;
+			} else {
+				display.inputStream << "Something went wrong placing ship sized:" << shipsToPlace[currentlyPlacingIndex];
+				display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+				currentlyPlacingIndex ++;
+			}
 		}
 
 		//Kaikki on mennyt hyvin jos päästiin tänne asti
@@ -647,36 +733,40 @@ public:
 
 	};
 
-	bool PlaceSingleShipRandomly(Board* board, int size, int amount) {
-		int try_count;
-		bool ship_placed;
+	bool PlaceSingleShipRandomly(Board* board, int shipSize) {
+		int max_tries = 10000; //Ihan vaan että jos ei toimikkaan oikein
+		int currentTry = 0;
+		bool ship_placed = false;
+		int xLoc;
+		int yLoc;
+		int rotation;
+		std::string output_s;
+		std::stringstream output;
 
-		int ship_location_x;
-		int ship_location_y;
-		int ship_rotation;
+		while (currentTry < max_tries) {
+			xLoc = rand() % 10;
+			yLoc = rand() % 10;
+			rotation = rand() % 8;
 
-		while (amount >= 1) { //Kuinka monta alusta laitetaan?
-			try_count = 1;
-			ship_placed = false;
-			while (ship_placed == false && try_count <= 100) {
-				//Arvotaan random sijainnit
-				ship_location_x = rand() % 10;
-				ship_location_y = rand() % 10;
-				ship_rotation = rand() % 8;
-				//Yritetään asettaa alusta.
-				ship_placed = (*board).setShip(ship_location_x, ship_location_y, ship_rotation, size);
-
-				try_count++;
+			if (max_tries > 100 && DEBUGGING) {
+				output << "max tries over 100 for ship:" << shipSize << ":" << xLoc << "," << yLoc << ":r" << rotation;
+				output.str();
+				display.BlitAndDraw(3, 5, output_s);
+				output.str(std::string());
+				//TODO:terminaali-like tulostus teksteille
 			}
 
-			if (DEBUGGING) {
-				std::cout << "Asetettu alus :" << size << " " << try_count << " yrityksellä\n";
+			ship_placed = (*board).trySetShip(xLoc, yLoc, rotation, shipSize);
+
+			if (ship_placed == true) {
+				return true;
+			} else {
+				currentTry++;
 			}
-			if (ship_placed)
-				amount--;
 		}
 
-		return true;
+		//Ei pitäisi päästä tänne.
+		return false;
 	};
 };
 
@@ -816,21 +906,22 @@ public:
 int main(void) {
 	srand(time(0));
 
+	logfile.open("log.txt");
+
 	//TEMP
 
-	HWND console = GetConsoleWindow();
+	HWND consoleHandle = GetConsoleWindow();
 	RECT r;
-	GetWindowRect(console, &r); //stores the console's current dimensions
+	GetWindowRect(consoleHandle, &r); //stores the console's current dimensions
 
 	//MoveWindow(window_handle, x, y, width, height, redraw_window);
-	MoveWindow(console, r.left, r.top, 800, 430, TRUE);
+	MoveWindow(consoleHandle, r.left, r.top, 800, 430, TRUE);
 
+	// Initialisoidaan kahvat
+	writeHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+	readHandle = GetStdHandle(STD_INPUT_HANDLE);
 
-
-
-	//TEMP
-
-
+	SetConsoleTitle(L"Battleships v0.2");
 
 	Animation animation = Animation();
 
@@ -847,24 +938,35 @@ int main(void) {
 	//Pääsilmukka
 	while (mainLoop) {
 
+
+
 		display.ClearBuffer();
-		animation.PlayWelcomeAnimation(display);
+		animation.PlayWelcomeAnimation();
 		display.AddBordersToBuffer();
 
-		display.BlitTextAt(3, 11, "N: New Game");
-		display.BlitTextAt(3, 12, "C: Continue");
-		display.BlitTextAt(3, 13, "H: High scores");
-		display.BlitTextAt(3, 14, "Q: Exit");
+		display.BlitTextAt(3, 9, "N: New Game");
+		display.BlitTextAt(3, 10, "C: Continue");
+		display.BlitTextAt(3, 11, "H: High scores");
+		display.BlitTextAt(3, 12, "Q: Exit");
 
+		if (DEBUGGING) {
+			display.BlitAndDraw(3, 13, "D: Debugging: Enabled   ");
+		}
+		else {
+			display.BlitAndDraw(3, 13, "D: Debugging: Disabled  ");
+		}
 		display.DrawScreen();
 
-		std::cout << "Input:>";
+		display.BlitAndDraw(3, 15, "Input:>");
+
+
 		std::cin >> inputString;
 
 		if (inputString == "N" || inputString == "n") {
 			display.ClearBuffer();
 			display.AddBordersToBuffer();
-			display.BlitAndDraw(2, 2, "New game");
+			display.DrawScreen();
+			display.BlitAndDraw(2, 3, "New game");
 			if (DEBUGGING)
 				display.BlitAndDraw(2, 3, "-Entering PrepareNewGame");
 			gameLogic.PrepareNewGame();
@@ -873,7 +975,8 @@ int main(void) {
 		else if (inputString == "C" || inputString == "c") {
 			display.ClearBuffer();
 			display.AddBordersToBuffer();
-			display.BlitAndDraw(2, 2, "Loading game");
+			display.DrawScreen();
+			display.BlitAndDraw(2, 3, "Loading game");
 			if (DEBUGGING)
 				display.BlitAndDraw(2, 3, "-Entering PrepareContinue");
 			gameLogic.PrepareContinue(saveHandler);
@@ -883,14 +986,20 @@ int main(void) {
 			highScoreManager.PrintHighScores();
 		}
 		else if (inputString == "Q" || inputString == "q") {
-			std::cout << "Quit\n";
+			display.ClearBuffer(true);
+			display.BlitTextAt(2, 2, "Thanks for playing!");
+			display.BlitTextAt(2, 4, "See you later captain. o7");
+			display.DrawScreen();
 			mainLoop = false;
-		}
-		else {
+		}else if (inputString == "D" || inputString == "d") {
+			DEBUGGING = !DEBUGGING;
+		} else {
 			std::cout << "Please type N,C,H or Q.\n";
 		}
 
 	}
 
+	logfile.close();
+	system("pause");
 	exit(0);
 }
