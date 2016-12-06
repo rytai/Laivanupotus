@@ -93,13 +93,20 @@ class Display {
 		void BlitTextAt(int screen_x_position, int screen_y_position, string text) {
 			int chars_to_loop = text.length();
 			for (int x = 0; x < chars_to_loop; x++)
-				screen_buffer[x+screen_x_position][screen_y_position] = text[x];
+				if ((x + screen_x_position)< screen_size_x)
+					screen_buffer[x+screen_x_position][screen_y_position] = text[x];
 		}
 
-		void BlitAndDraw(int screen_x_position, int screen_y_position, string text){ 
+		void BlitAndDraw(int screen_x_position, int screen_y_position, string text, int locationType=0){ 
 			COORD position;
-			position.X = screen_x_position;
-			position.Y = screen_y_position;
+			if (locationType == BLITTYPE_CONSOLE) { //2-consolerow
+				position.X = consoleWriteLocation.X;
+				position.Y = ConsoleNextRow();
+			}
+			else if (locationType == BLITTYPE_DEFAULT) { //0-default
+				position.X = screen_x_position;
+				position.Y = screen_y_position;
+			}
 
 			BlitTextAt(position.X, position.Y, text);
 
@@ -114,7 +121,7 @@ class Display {
 				position.X = consoleWriteLocation.X;
 				position.Y = ConsoleNextRow();
 			}
-			else if (locationType = BLITTYPE_DEFAULT) { //0-default
+			else if (locationType == BLITTYPE_DEFAULT) { //0-default
 				position.X = x;
 				position.Y = y;
 			}
@@ -212,8 +219,49 @@ class Display {
 			}
 		}
 
+		void BlitBoardSymbols(int topLeftX, int topLeftY, string type = "1x1") {
+			if (type == "1x1") {
+				BlitTextAt(topLeftX, topLeftY, " ABCDEFGHIJ");
+				for (int i = 1; i <= 9; i++) {
+					BlitTextAt(topLeftX, topLeftY + i, std::to_string(i)); //Numerot 1-10 pystyssä yhden välein
+				}
+				BlitTextAt(topLeftX-1, topLeftY + 10, std::to_string(10)); //10 eri kolumniin
+			}else if (type == "2x2") {
+				BlitTextAt(topLeftX, topLeftY, " A  B  C  D  E  F  G  H  I  J");
+				for (int i = 1; i <= 9; i++) {
+					BlitTextAt(topLeftX, topLeftY + 3 * i - 2, std::to_string(i)); //Numerot 1-10 pystyssä kahden välein
+				}
+				BlitTextAt(topLeftX-1, topLeftY + 3 * 10 - 2, std::to_string(10)); //Numero 10 eri kolumniin
+			}
+		}
+
 		void ConsoleResetRow() {
 			consoleWriteLocation.Y = consoleMinRow;
+		}
+
+		void DrawStaticGameUI(int* playerBoard, int* cpuBoard) {
+			ClearBuffer(true);
+
+			BlitBoardSymbols(29, 19, "1x1");
+			BlitBoard(playerBoard, 30, 20, "1x1", 0);
+			BlitBoardSymbols(45, 1, "2x2");
+			BlitBoard(cpuBoard, 46, 2, "2x2", 0);
+
+			BlitTextAt(2, 19, "Where do we aim. cap? ");
+			BlitTextAt(2, 21, ">:");
+
+			BlitTextAt(2, 24, "Ships left:");
+			BlitTextAt(16, 24, "You");
+			BlitTextAt(21, 24, "AI");
+
+			BlitTextAt(2, 25, "Carrier");
+			BlitTextAt(2, 26, "Battleship");
+			BlitTextAt(2, 27, "Cruiser");
+			BlitTextAt(2, 28, "Gunboat");
+			BlitTextAt(2, 29, "Submarine");
+
+			DrawScreen();
+
 		}
 
 	private:
@@ -245,15 +293,12 @@ class Display {
 			}
 			return consoleWriteLocation.Y;
 		}
-
-
-
-
+		
 
 };
 
 
-Display display = Display(10, 10, 80, 31);
+Display display = Display(10, 10, 80, 32);
 
 class Animation {
 	public:
@@ -527,13 +572,13 @@ public:
 					PopulateSingleBoard(file_, board_c_missile_data);
 				}
 				else {
-					std::cout << "Cant open save file";
+					logfile << "Cant open save file";
 					exit(11);
 				}
 				file_.close();
 			}
 		catch (...) {
-			std::cout << "Error in loading savefile-boards";
+			logfile << "Error in loading savefile-boards";
 			exit(11);
 		}
 	}
@@ -558,7 +603,7 @@ public:
 
 				i++;
 			} else {
-				std::cout << "There's something wrong with save file (board):>" << character << "<\n";
+				logfile << "There's something wrong with save file (board):>" << character << "<\n";
 				i++;
 			}
 		}
@@ -595,7 +640,7 @@ private:
 			file.close();
 		}
 		else {
-			cout << "Could not open highscores -file!";
+			logfile << "Could not open highscores -file!";
 			exit(0);
 		}
 
@@ -627,7 +672,7 @@ public:
 			}
 		}
 		else {
-			std::cout << "Could not open highscores file!";
+			logfile << "Could not open highscores file!";
 			exit(666);
 		}
 		file.close();
@@ -698,7 +743,6 @@ public:
 		}
 		display.DrawScreen();
 
-		std::cout << "CPU Asettaa aluksia.\n";
 		while (currentlyPlacingIndex < shipsToPlace.size()-1) {
 
 			//Pick the next ship
@@ -817,6 +861,76 @@ void uuden_puskurin_testaus() {
 	getchar();
 }
 
+class Input {
+public:
+	int coordX = 0;
+	int coordY = 0;
+
+	string coordLetter = "ABCDEFGHIJ";
+
+	Input() {}
+
+	string CInput(int posX = 777, int posY = 777) {
+		string cinstring;
+		COORD position;
+		if (posX != 777) {
+			position.X = posX;
+			position.Y = posY;
+			SetConsoleCursorPosition(writeHandle, position);
+		}
+
+		std::cin >> cinstring;
+		std::cin.clear();
+		std::cin.ignore(10000, '\n');
+
+		return cinstring;
+	}
+	///Palauttaa false, jos syöte ei ole koordinaatti.
+	///Jos syöte on koordinaatti niin koordinaatit tallennetaan luokkamuttujiksi.
+	bool CoordsFromInput(string inp) {
+		//Täytyy olla kahden pituinen merkkijono
+		if (inp.length() != 2)
+			return false;
+		if (inp[0] == 'A' || inp[0] == 'a') {
+			coordX = 0;
+		}else if (inp[0] == 'B' || inp[0] == 'b') {
+			coordX = 1;
+		}
+		else if (inp[0] == 'C' || inp[0] == 'c') {
+			coordX = 2;
+		}
+		else if (inp[0] == 'D' || inp[0] == 'd') {
+			coordX = 3;
+		}
+		else if (inp[0] == 'E' || inp[0] == 'e') {
+			coordX = 4;
+		}
+		else if (inp[0] == 'F' || inp[0] == 'f') {
+			coordX = 5;
+		}
+		else if (inp[0] == 'G' || inp[0] == 'g') {
+			coordX = 6;
+		}
+		else if (inp[0] == 'H' || inp[0] == 'h') {
+			coordX = 7;
+		}
+		else if (inp[0] == 'I' || inp[0] == 'i') {
+			coordX = 8;
+		}
+		else if (inp[0] == 'J' || inp[0] == 'j') {
+			coordX = 9;
+		}else{
+			return false;
+		}
+
+		int second = inp[1] - 48;
+
+	}
+
+};
+
+Input input = Input();
+
 
 class GameLogic {
 	bool gameLooping = true;
@@ -878,25 +992,26 @@ public:
 
 	void GameLoop() {
 
+		string command;
+
+		int* playerBoardArray = (*playerBoard).GetVisibleArray(0);
+		int* cpuBoardArray    = (*cpuBoard).GetVisibleArray(0);
+
+		//DRAW UI
+		display.DrawStaticGameUI(playerBoardArray, cpuBoardArray);
+
+		if (DEBUGGING) {
+			display.BlitAndDraw(777, 777, "Game loop started.", display.BLITTYPE_CONSOLE);
+		}
+		
 		while (gameLooping == true) {
-			gameLooping = false;
-			display.ClearBuffer();
-			display.AddBordersToBuffer();
 
-			display.BlitTextAt(2, 4, "-Showing temporary board setup");
-			display.BlitTextAt(45, 2, "Player board:");
-			display.BlitTextAt(59, 2, "Cpu board:");
+			command = input.CInput(5, 21);
 
-			display.BlitBoard((*playerBoard).GetVisibleArray(0), 45, 3, "1x1", 0);
-			display.BlitBoard((*cpuBoard).GetVisibleArray(0), 59, 3, "1x1", 0);
-
-			display.BlitTextAt(2, 5, "Type anything to end the preview.");
-
-			display.DrawScreen();
-
-			string dump;
-			std::cin >> dump;
-
+			if (command == "Q" || command == "q") {
+				gameLooping = false;
+			}
+			
 		}
 	}
 };
@@ -915,7 +1030,7 @@ int main(void) {
 	GetWindowRect(consoleHandle, &r); //stores the console's current dimensions
 
 	//MoveWindow(window_handle, x, y, width, height, redraw_window);
-	MoveWindow(consoleHandle, r.left, r.top, 800, 430, TRUE);
+	MoveWindow(consoleHandle, r.left, r.top, 800, 440, TRUE);
 
 	// Initialisoidaan kahvat
 	writeHandle = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -941,13 +1056,14 @@ int main(void) {
 
 
 		display.ClearBuffer();
-		animation.PlayWelcomeAnimation();
+		//animation.PlayWelcomeAnimation();
 		display.AddBordersToBuffer();
 
 		display.BlitTextAt(3, 9, "N: New Game");
 		display.BlitTextAt(3, 10, "C: Continue");
 		display.BlitTextAt(3, 11, "H: High scores");
 		display.BlitTextAt(3, 12, "Q: Exit");
+		display.BlitTextAt(50, 28, "Copyright: Tomi Mäkinen 2016");
 
 		if (DEBUGGING) {
 			display.BlitAndDraw(3, 13, "D: Debugging: Enabled   ");
@@ -994,12 +1110,11 @@ int main(void) {
 		}else if (inputString == "D" || inputString == "d") {
 			DEBUGGING = !DEBUGGING;
 		} else {
-			std::cout << "Please type N,C,H or Q.\n";
+			//std::cout << "Please type N,C,H or Q.\n";
 		}
 
 	}
 
 	logfile.close();
-	system("pause");
 	exit(0);
 }
