@@ -13,6 +13,7 @@
 
 #include <sstream> //Merkkijonojen muokkaamista varten
 
+
 //GetConsoleHeighti‰ varten. Kertoo ett‰ windows yli win2000
 #define _WIN32_WINNT 0x0500
 
@@ -23,6 +24,17 @@ using namespace std;
 
 bool DEBUGGING = true;
 ofstream logfile;
+
+
+///Size m‰‰ritt‰‰, ett‰ kuinka monta koordinaattiparia laitetaan coords arrayyn.
+struct ship {
+	int size;
+	//Jokatoinen on X koordinaatti ja joka toinen Y. 0-9
+	//0,0,1,0,2,0,3,0,4,0,5,0
+	int *coords;
+	/// 0-unharmed, 1-hit, 2-sank
+	int status;
+};
 
 //Sis‰ltaa metodit ruudun piirtamiseen.
 class Display {
@@ -49,6 +61,8 @@ class Display {
 
 		HANDLE writeHandle;
 		HANDLE readHandle;
+
+		bool cleanUpNeeded = false;
 		
 		//Constructor -asetetaan luokkamuuttujat.
 		Display(int x, int y, int sx, int sy)
@@ -63,10 +77,11 @@ class Display {
 			for (int x = 0; x < screen_size_x; x++) {
 				screen_buffer[x] = new string[screen_size_y];
 			}
+			cleanUpNeeded = true;
 
 			//Tyypillisen teksti outputin sijainti
 			consoleMinRow = 2; //Kolmas rivi
-			consoleMaxRow = (screen_size_y-1) - 2; //Kolmanneksi alin
+			consoleMaxRow = (screen_size_y-1) - 14;
 			consoleWriteLocation.X = consoleMinRow;
 			consoleWriteLocation.Y = 2;
 
@@ -76,6 +91,16 @@ class Display {
 			//Alustetaan ruutu
 			ClearBuffer();
 			AddBordersToBuffer();
+		}
+
+		void CleanUp() {
+			if (cleanUpNeeded) {
+				for (int x = 0; x < screen_size_x; x++) {
+					delete [screen_size_y]screen_buffer[x];
+				}
+				delete[screen_size_x]screen_buffer;
+			}
+			cleanUpNeeded = false;
 		}
 
 		void DrawScreen() {
@@ -91,7 +116,7 @@ class Display {
 		}
 
 		void BlitTextAt(int screen_x_position, int screen_y_position, string text) {
-			int chars_to_loop = text.length();
+			int chars_to_loop = (int)text.length();
 			for (int x = 0; x < chars_to_loop; x++)
 				if ((x + screen_x_position)< screen_size_x)
 					screen_buffer[x+screen_x_position][screen_y_position] = text[x];
@@ -102,11 +127,13 @@ class Display {
 			if (locationType == BLITTYPE_CONSOLE) { //2-consolerow
 				position.X = consoleWriteLocation.X;
 				position.Y = ConsoleNextRow();
+				ClearConsoleLine(position.Y);
 			}
 			else if (locationType == BLITTYPE_DEFAULT) { //0-default
 				position.X = screen_x_position;
 				position.Y = screen_y_position;
 			}
+
 
 			BlitTextAt(position.X, position.Y, text);
 
@@ -120,6 +147,7 @@ class Display {
 			if (locationType == BLITTYPE_CONSOLE) { //2-consolerow
 				position.X = consoleWriteLocation.X;
 				position.Y = ConsoleNextRow();
+				ClearConsoleLine(position.Y);
 			}
 			else if (locationType == BLITTYPE_DEFAULT) { //0-default
 				position.X = x;
@@ -135,6 +163,16 @@ class Display {
 				SetConsoleCursorPosition(writeHandle, position);
 			}
 			std::cout << text;
+
+		}
+
+		void ClearConsoleLine(int line) {
+			COORD position;
+			position.Y = line;
+			position.X = 2;
+			string emptyline = "                                        ";
+			SetConsoleCursorPosition(writeHandle, position);
+			std::cout << emptyline;
 
 		}
 
@@ -355,16 +393,28 @@ public:
 	bool * shipArrayFree;
 
 	int * visibleArray;
+	
+	vector<ship*> shipList;
+
+	///Upotetun aluksen koko, tai 0 jos vain osuma
+	int damageReport = 0;
+
+	bool cleanUpNeeded = false;
+
 
 	Board() {
-		shipArrayFree = new bool[100]();
-		visibleArray = new int[100]();
+		shipArrayFree = new bool[100];
+		visibleArray = new int[100];
+
+		shipList = vector<ship*>();
+
+		cleanUpNeeded = true;
 	}
 
 	//Luo taulukot tyhj‰st‰
 	void FillArraysWithFalse() {
-		shipArray = new bool[100]();
-		missileArray = new bool[100]();
+		shipArray = new bool[100];
+		missileArray = new bool[100];
 		for (int y = 0; y <= 10 - 1; y++) {
 			for (int x = 0; x <= 10 - 1; x++) {
 				shipArray[y*10+y] = false;
@@ -412,10 +462,16 @@ public:
 
 
 	///X,Y,Rotaatio(oikea=0 ja siit‰ myˆt‰p‰iv‰‰n), koko. Palauttaa false jos ei onnistunut.
-	bool trySetShip(int from_x, int from_y, int rotation, int size, bool iterationsDone = false) {
+	bool trySetShip(int from_x, int from_y, int rotation, int size, bool iterationsDone = false, ship *newShip = NULL) {
 		int x = from_x;
 		int y = from_y;
 		int i = size;
+
+		if (newShip == NULL) {
+			newShip = new ship;
+			(*newShip).size = 0;
+			(*newShip).coords = new int[10];
+		}
 
 		if (DEBUGGING) {
 			logfile << "Trying to set ship size: " << size << " @ " << from_x << "," << from_y << " rot:" << rotation << " iter:" << iterationsDone << "\n";
@@ -428,6 +484,9 @@ public:
 
 				//Kaikki iteroinnit k‰yty l‰pi onnistuneesti. Asetetaan yksi kerrallaan aluksen palat.
 				if (iterationsDone == true) {
+					(*newShip).coords[(i-1)*2] = x;
+					(*newShip).coords[(i-1)*2+1] = y;
+					(*newShip).size++;
 					setCell(x, y);
 				}
 				else {
@@ -436,6 +495,7 @@ public:
 						if (DEBUGGING) {
 							logfile << "DEB: Failed to put ship like this: x:" << from_x << " y:" << from_y << " rotation: " << rotation<<"\n";
 						}
+						delete newShip;
 						return false;
 					}
 				}
@@ -484,12 +544,14 @@ public:
 		}
 
 		if (iterationsDone == true) {
+			//Lis‰t‰‰n uusi laiva laudan kokoelmaan.
+			shipList.push_back(newShip);
 			return true; //Alus on asetettu. Palataan-->
 		}
 
 		//Kerran t‰nne on p‰‰sty, alue on vapaa. Asetetaan aluksen osat soluihin iteroimalla itse‰‰n.
 		//unohtamatta palautusta
-		return trySetShip(from_x, from_y, rotation, size, true);
+		return trySetShip(from_x, from_y, rotation, size, true, newShip);
 	}
 
 
@@ -541,6 +603,77 @@ public:
 		}
 		return visibleArray;
 	}
+
+	void CleanUp() {
+		if (cleanUpNeeded == true) {
+
+			for (int i = 0; i < shipList.size(); i++) {
+				delete (*shipList[i]).coords;
+				delete shipList[i];
+			}
+			delete[] shipArray;
+			delete[] missileArray;
+			delete[] shipArrayFree;
+			delete[] visibleArray;
+		}
+
+		cleanUpNeeded = false;
+	}
+
+	bool MissileFiredAt(int coordX, int coordY) {
+		ship shipI;
+
+		if (missileArray[10 * coordY + coordX] == true) {
+			//Ammuttu jo t‰h‰n.
+			return false;
+		}
+
+		missileArray[10 * coordY + coordX] = true;
+
+		//Tarkistetaan, osuttiinko mihink‰‰n.
+		if (coordX >= 0 && coordX <= 9 & coordY <= 9 && coordY >= 0) {
+			if (shipArray[coordY * 10 + coordX] != true) {
+				false;
+			}
+		} else { return false; }
+
+		//Osuttu
+		for (int i = 0; i < shipList.size() - 1; i++) {
+			for (int j = 0; j < (*shipList[i]).size; j++) {
+				shipI = (*shipList[i]);
+				//Osuttu kyseisen aluksen kyseiseen kohtaan.
+				if (shipI.coords[(j * 2)] == coordX && shipI.coords[(j * 2) + 1] == coordY) {
+					shipI.status = 1;
+
+					if (CheckShipDamageCritical(shipI) == true) {
+						//Alus upotettu.
+						damageReport = shipI.size;
+						return true;
+					}
+					else { //Vain osuma.
+						damageReport = 0;
+						return true;
+					}
+				}
+			}
+		}
+	}
+
+	bool CheckShipDamageCritical(ship ship_) {
+		int x, y;
+		//k‰yd‰‰n alus l‰pi
+		for (int i = 0; i < ship_.size; i++) {
+			x = ship_.coords[i * 2];
+			y = ship_.coords[(i * 2)+1];
+
+			if (shipArray[y * 10 + x] == false){
+				//jos on yksikin haavoittumaton osa, alus voi jatkaa
+				return false;
+			}
+		}
+		return true;
+	}
+
 };
 
 class SaveHandler {
@@ -551,13 +684,24 @@ class SaveHandler {
 	bool *board_c_ship_data;
 	bool *board_c_missile_data;
 
+	bool cleanUpNeeded = false;
+
 public:
 
 	SaveHandler() {
-		board_p_ship_data     = new bool[100]();
-		board_p_missile_data  = new bool[100]();
-		board_c_ship_data     = new bool[100]();
-		board_c_missile_data  = new bool[100]();
+		board_p_ship_data     = new bool[100];
+		board_p_missile_data  = new bool[100];
+		board_c_ship_data     = new bool[100];
+		board_c_missile_data  = new bool[100];
+		cleanUpNeeded = true;
+	}
+
+	///Free dynamic memory
+	void CleanUp() {
+		if (cleanUpNeeded) {
+			//hoidetaan board luokissa.
+		}
+		cleanUpNeeded = false;
 	}
 
 	void LoadDataFromSaveFile() {
@@ -570,6 +714,9 @@ public:
 					PopulateSingleBoard(file_, board_p_missile_data);
 					PopulateSingleBoard(file_, board_c_ship_data);
 					PopulateSingleBoard(file_, board_c_missile_data);
+					cleanUpNeeded = true;
+
+					//CleanUp();
 				}
 				else {
 					logfile << "Cant open save file";
@@ -623,9 +770,12 @@ private:
 	int score_count;
 	string filename;
 
+	bool cleanUpNeeded = false;
+
 	void LoadScoresFromFile() {
 		hs_names = new string[10];
 		hs_scores = new int[10];
+		cleanUpNeeded = true;
 
 		ifstream file(filename);
 		string name;
@@ -646,6 +796,7 @@ private:
 
 	};
 
+
 	ofstream OpenFile(string filename) {
 		ofstream file;
 		file.open(filename);
@@ -653,6 +804,15 @@ private:
 	};
 
 public:
+
+	///Free the dynamic memory.
+	void CleanUp() {
+		if (cleanUpNeeded) {
+			delete[10] hs_names;
+			delete[10] hs_scores;
+		}
+		cleanUpNeeded = false;
+	}
 
 	HighScoreManager(string highscore_filename, int score_count_){
 		hs_names = new string[10];
@@ -729,6 +889,8 @@ public:
 		std::stringstream output;
 		std::string output_s;
 
+		ship *lastShipAdded;
+
 		//Ruutu tyhj‰ksi
 		display.ClearBuffer(true);
 		display.DrawScreen();
@@ -751,7 +913,19 @@ public:
 			shipPlaced = PlaceSingleShipRandomly(board, currentlyPlacing);
 
 			if (shipPlaced) {//Alus asetettu
-				display.inputStream << "Ship placed at:" << shipsToPlace[currentlyPlacingIndex];
+				display.inputStream << "Ship placed sized " << shipsToPlace[currentlyPlacingIndex] << ".";
+				display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+				display.inputStream << "ShipData : ";
+				//haetaan pointteri alukseen
+				lastShipAdded = (*board).shipList.back();
+				for (int i = 0; i < 5; i++) {
+					if (i == (*lastShipAdded).size)
+						break;
+					display.inputStream << (*lastShipAdded).coords[i*2];
+					display.inputStream << ".";
+					display.inputStream << (*lastShipAdded).coords[i*2+1];
+					display.inputStream << ",";
+				}
 				display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 
 				//Laudan piirto
@@ -923,7 +1097,15 @@ public:
 			return false;
 		}
 
-		int second = inp[1] - 48;
+		coordY = inp[1] - '0';
+
+		if (coordY >= 1 && coordY <= 10) {
+			coordY--;
+			return true;
+		}
+		else {
+			return false;
+		}
 
 	}
 
@@ -936,9 +1118,22 @@ class GameLogic {
 	bool gameLooping = true;
 	AI ai;
 
+	bool cleanUpNeeded = false;
+
 public:
 	Board *playerBoard;
 	Board *cpuBoard;
+
+	void CleanUp() {
+		if (cleanUpNeeded == true) {
+			(*playerBoard).CleanUp();
+			(*cpuBoard).CleanUp();
+			delete playerBoard;
+			delete cpuBoard;
+		}
+
+		cleanUpNeeded = false;
+	}
 
 	void PrepareNewGame() {
 
@@ -951,6 +1146,7 @@ public:
 
 		playerBoard = new Board();
 		cpuBoard = new Board();
+		cleanUpNeeded = true;
 
 
 		//omat
@@ -1003,16 +1199,57 @@ public:
 		if (DEBUGGING) {
 			display.BlitAndDraw(777, 777, "Game loop started.", display.BLITTYPE_CONSOLE);
 		}
+
+		gameLooping = true;
 		
 		while (gameLooping == true) {
 
 			command = input.CInput(5, 21);
+			display.BlitAndDraw(5, 21, "                  ", display.BLITTYPE_DEFAULT);
+			display.BlitAndDraw(5, 22, "                  ", display.BLITTYPE_DEFAULT);
 
-			if (command == "Q" || command == "q") {
+			if (input.CoordsFromInput(command) == true) {
+				display.inputStream << "You shot at :" << input.coordX << input.coordY;
+				display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+				MissileFiredAtCpu(input.coordX, input.coordY);
+			}else if (command == "Q" || command == "q") {
 				gameLooping = false;
+			}
+			else {
+				display.BlitAndDraw(5, 22, "Input coord or Q. ", display.BLITTYPE_DEFAULT);
 			}
 			
 		}
+
+		//Hoidetaan loppusiivoaminen yms kun pois peliloopista.
+		GameLoopExit();
+	}
+
+	void MissileFiredAtCpu(int coordX, int coordY) {
+		//Tarkistaa, osuttiinko johonkin.
+		if ((*cpuBoard).MissileFiredAt(coordX, coordY) == true) {
+			switch((*cpuBoard).damageReport) {
+				case 0:
+					display.inputStream << "It's a hit!";
+				case 1:
+					display.inputStream << "HIT! You sank a carrier.";
+				case 2:
+					display.inputStream << "HIT! You sank a battleship.";
+				case 3:
+					display.inputStream << "HIT! You sank a cruiser.";
+				case 4:
+					display.inputStream << "HIT! You sank a gunboat.";
+				case 5:
+					display.inputStream << "HIT! You sank a submarine.";
+			}
+			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+
+		}
+
+	}
+
+	void GameLoopExit() {
+		CleanUp();
 	}
 };
 
@@ -1114,6 +1351,10 @@ int main(void) {
 		}
 
 	}
+
+	highScoreManager.CleanUp();
+	gameLogic.CleanUp();
+	display.CleanUp();
 
 	logfile.close();
 	exit(0);
