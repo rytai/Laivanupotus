@@ -15,7 +15,7 @@
 
 
 //GetConsoleHeighti‰ varten. Kertoo ett‰ windows yli win2000
-#define _WIN32_WINNT 0x0500
+//#define _WIN32_WINNT 0x0500
 
 HANDLE writeHandle;
 HANDLE readHandle;
@@ -42,7 +42,11 @@ class Display {
 
 		const char symbol_ship    = '#';
 		const char symbol_nonfree = 'x';
-		const char symbol_free    = '.';
+		const char symbol_free = '.';
+
+		const char symbol_unhit = '.';
+		const char symbol_miss = 'x';
+		const char symbol_hit = '#';
 
 		const char border_symbol  = '#';
 		
@@ -58,6 +62,7 @@ class Display {
 		COORD dummyLocation;
 		COORD boardLocation2x2;
 		COORD zeroLocation;
+		int consoleWidth = 40;
 
 		HANDLE writeHandle;
 		HANDLE readHandle;
@@ -125,9 +130,9 @@ class Display {
 		void BlitAndDraw(int screen_x_position, int screen_y_position, string text, int locationType=0){ 
 			COORD position;
 			if (locationType == BLITTYPE_CONSOLE) { //2-consolerow
+				ConsoleNextRow();
 				position.X = consoleWriteLocation.X;
-				position.Y = ConsoleNextRow();
-				ClearConsoleLine(position.Y);
+				position.Y = consoleMaxRow;
 			}
 			else if (locationType == BLITTYPE_DEFAULT) { //0-default
 				position.X = screen_x_position;
@@ -145,9 +150,9 @@ class Display {
 		void BlitAndDraw(int locationType, int x=0, int y = 0) {
 			COORD position;
 			if (locationType == BLITTYPE_CONSOLE) { //2-consolerow
+				ConsoleNextRow();
 				position.X = consoleWriteLocation.X;
-				position.Y = ConsoleNextRow();
-				ClearConsoleLine(position.Y);
+				position.Y = consoleMaxRow;
 			}
 			else if (locationType == BLITTYPE_DEFAULT) { //0-default
 				position.X = x;
@@ -166,14 +171,9 @@ class Display {
 
 		}
 
-		void ClearConsoleLine(int line) {
-			COORD position;
-			position.Y = line;
-			position.X = 2;
+		void ClearConsoleLine() {
 			string emptyline = "                                        ";
-			SetConsoleCursorPosition(writeHandle, position);
-			std::cout << emptyline;
-
+			BlitAndDraw(consoleWriteLocation.X, consoleMaxRow, emptyline);
 		}
 
 
@@ -215,44 +215,50 @@ class Display {
 
 		///Piirt‰‰ pelilaudan haluamaan kohtaan.
 		///mode:0=
-		void BlitBoard(int *visibleBoard, int position_x, int position_y, string size = "2x2",
-			int mode = 0 ) {
+		void BlitBoard(int *visibleBoard, int position_x, int position_y, string size = "2x2") {
 			string row = "";
 			int print_row_number = 0;
-			int mode_dependent_int;
+			char charFromBoard;
 
-			if (mode == 0) {
-				for (int y = 0; y <= 10 - 1; y++) {
-					row = "";
-					for (int x = 0; x <= 10 - 1; x++) {
-						mode_dependent_int = visibleBoard[y * 10 + x];
-						if (mode_dependent_int == 0) {
-							row += symbol_free;
-							if (size == "2x2")
-								row += symbol_free;
-						}
-						if (mode_dependent_int == 1) {
-							row += symbol_ship;
-							if (size == "2x2")
-								row += symbol_ship;
-						}
-						if (mode_dependent_int == 2) {
-							row += symbol_nonfree;
-							if (size == "2x2")
-								row += symbol_nonfree;
-						}
-						if (x<9 && size == "2x2")
-							row += " ";
+			for (int y = 0; y <= 10 - 1; y++) {
+				row = "";
+				for (int x = 0; x <= 10 - 1; x++) {
+					charFromBoard = visibleBoard[y * 10 + x];
+					if (charFromBoard == 0) {
+						row += symbol_free;
 					}
+					else if (charFromBoard == 1) {
+						row += symbol_ship;
+					}
+					else if (charFromBoard == 2) {
+						row += symbol_nonfree;
+					}
+					else if (charFromBoard == '.') {
+						row += symbol_nonfree;
+					}
+					else if (charFromBoard == 'o') {
+						row += symbol_miss;
+					}
+					else if (charFromBoard == 'x') {
+						row += symbol_hit;
+					}
+					else {
+						row += '?'; //virhe
+					}
+					if (size == "2x2")
+						row += row.back();
+
+					if (x<9 && size == "2x2")
+						row += " ";
+				}
+				BlitTextAt(position_x, position_y + print_row_number, row);
+				print_row_number++;
+				if (size == "2x2") {
 					BlitTextAt(position_x, position_y + print_row_number, row);
 					print_row_number++;
-					if (size == "2x2") {
-						BlitTextAt(position_x, position_y + print_row_number, row);
-						print_row_number++;
-					}
-					if (y < 9 && size == "2x2") {
-						print_row_number++;
-					}
+				}
+				if (y < 9 && size == "2x2") {
+					print_row_number++;
 				}
 			}
 		}
@@ -281,9 +287,9 @@ class Display {
 			ClearBuffer(true);
 
 			BlitBoardSymbols(29, 19, "1x1");
-			BlitBoard(playerBoard, 30, 20, "1x1", 0);
+			BlitBoard(playerBoard, 30, 20, "1x1");
 			BlitBoardSymbols(45, 1, "2x2");
-			BlitBoard(cpuBoard, 46, 2, "2x2", 0);
+			BlitBoard(cpuBoard, 46, 2, "2x2");
 
 			BlitTextAt(2, 19, "Where do we aim. cap? ");
 			BlitTextAt(2, 21, ">:");
@@ -312,31 +318,132 @@ class Display {
 
 		string **screen_buffer;
 
-		int ConsoleNextRow() {
-			int previousRow = consoleWriteLocation.Y;
-			if (consoleWriteLocation.Y < consoleMaxRow) {
-				consoleWriteLocation.Y++;
+
+	//siirt‰‰ kaikkia konsolin rivej‰ yhden ylˆsp‰in
+		void ConsoleNextRow() {
+
+			string consoleLine;
+
+			for (int y = consoleMinRow+1; y <= consoleMaxRow; y++) {
+				consoleLine = "";
+				for (int i = consoleWriteLocation.X; i < consoleWriteLocation.X + consoleWidth; i++) {
+					consoleLine += screen_buffer[i][y];
+				}
+				BlitAndDraw(consoleWriteLocation.X, y - 1, consoleLine);
 			}
-			else {
-				consoleWriteLocation.Y = consoleMinRow;
-			}
-			return previousRow;
+			ClearConsoleLine();
 		}
-		int ConsolePrevRow() {
-			int previousRow = consoleWriteLocation.Y;
-			if (consoleWriteLocation.Y > consoleMinRow) {
-				consoleWriteLocation.Y--;
-			}else {
-				consoleWriteLocation.Y = consoleMaxRow;
-			}
-			return consoleWriteLocation.Y;
-		}
-		
 
 };
 
 
 Display display = Display(10, 10, 80, 32);
+
+
+
+class Input {
+public:
+	int coordX = 0;
+	int coordY = 0;
+
+	string input;
+
+	string coordLetter = "ABCDEFGHIJ";
+
+	Input() {}
+
+	string CInput(int posX = 777, int posY = 777) {
+		string cinstring;
+		COORD position;
+		if (posX != 777) {
+			position.X = posX;
+			position.Y = posY;
+			SetConsoleCursorPosition(writeHandle, position);
+		}
+
+		//std::cout.flush();
+
+		int c = std::cin.peek();  // peek character
+
+		if (c == '\n') {
+			cinstring = "enter";
+		}
+		else {
+			std::cin >> cinstring;
+		}
+
+		std::cin.clear();
+		std::cin.ignore(10000, '\n');
+
+		return cinstring;
+	}
+	///Palauttaa false, jos syˆte ei ole koordinaatti.
+	///Jos syˆte on koordinaatti niin koordinaatit tallennetaan luokkamuttujiksi.
+	bool CoordsFromInput(string inp) {
+		//T‰ytyy olla kahden pituinen merkkijono
+		if (inp.length() == 2 || inp.length() == 3) {
+
+
+			if (inp[0] == 'A' || inp[0] == 'a') {
+				coordX = 0;
+			}
+			else if (inp[0] == 'B' || inp[0] == 'b') {
+				coordX = 1;
+			}
+			else if (inp[0] == 'C' || inp[0] == 'c') {
+				coordX = 2;
+			}
+			else if (inp[0] == 'D' || inp[0] == 'd') {
+				coordX = 3;
+			}
+			else if (inp[0] == 'E' || inp[0] == 'e') {
+				coordX = 4;
+			}
+			else if (inp[0] == 'F' || inp[0] == 'f') {
+				coordX = 5;
+			}
+			else if (inp[0] == 'G' || inp[0] == 'g') {
+				coordX = 6;
+			}
+			else if (inp[0] == 'H' || inp[0] == 'h') {
+				coordX = 7;
+			}
+			else if (inp[0] == 'I' || inp[0] == 'i') {
+				coordX = 8;
+			}
+			else if (inp[0] == 'J' || inp[0] == 'j') {
+				coordX = 9;
+			}
+			else {
+				return false;
+			}
+
+			if (inp.length() == 3) {
+				//Erikoiss‰‰ntˆ kympille
+				if (inp[1] == '1' && inp[2] == '0') {
+					coordY = 9;
+					return true;
+				}
+				else { return false; }
+			}
+
+
+			coordY = inp[1] - '0';
+
+			if (coordY >= 1 && coordY <= 10) {
+				coordY--;
+				return true;
+			}
+			else {
+				return false;
+			}
+		}return false;
+	}
+
+
+};
+
+Input input = Input();
 
 class Animation {
 	public:
@@ -379,7 +486,17 @@ class Animation {
 		"  | |_) | /  \\  | |     | |  | |    | |__  | (___ | |__| | | | | |__) | (___  ",
 		"  |  _ < / /\\ \\ | |     | |  | |    |  __|  \\___ \\|  __  | | | |  ___/ \\___ \\ ",
 		"  | |_) / ____ \\| |     | |  | |____| |____ ____) | |  | |_| |_| |     ____) |",
-		"  |____/_/    \\_\\_|     |_|  |______|______|_____/|_|  |_|_____|_|    |_____/ "
+		"  |____/_/    \\_\\_|     |_|  |______|______|_____/|_|  |_|_____|_|    |_____/ ",
+		"",
+		"",
+		"",
+		"         __\\__",
+		"        |_____\\_______-====§   -===§",
+		"    ___/_______/_______\\_____",
+		"   |             > > >      /",
+		"~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+
+
 		};
 };
 
@@ -389,7 +506,7 @@ class Board {
 
 public:
 	bool * shipArray;				//Pit‰‰ sis‰ll‰‰n alukset
-	bool * missileArray;			//Pit‰‰ sis‰ll‰‰n ohjukset
+	char * missileArray;			//Pit‰‰ sis‰ll‰‰n osumat ja hudit
 	bool * shipArrayFree;
 
 	int * visibleArray;
@@ -403,8 +520,8 @@ public:
 
 
 	Board() {
-		shipArrayFree = new bool[100];
-		visibleArray = new int[100];
+		shipArrayFree = new bool[100]();
+		visibleArray = new int[100]();
 
 		shipList = vector<ship*>();
 
@@ -413,8 +530,8 @@ public:
 
 	//Luo taulukot tyhj‰st‰
 	void FillArraysWithFalse() {
-		shipArray = new bool[100];
-		missileArray = new bool[100];
+		shipArray = new bool[100]();
+		missileArray = new char[100]();
 		for (int y = 0; y <= 10 - 1; y++) {
 			for (int x = 0; x <= 10 - 1; x++) {
 				shipArray[y*10+y] = false;
@@ -459,6 +576,21 @@ public:
 
 		return false;
 	}
+	///Palauttaa false jos ruutua, tai sen ymp‰ristˆ‰ ei ole varattu
+	bool CheckCellReserved(int x, int y) {
+		//Ensin katsotaan onko tarkistettava solu taulukon sis‰ll‰
+		if (x >= 0 && x <= 9 && y >= 0 && y <= 9) {
+			if (shipArrayFree[y * 10 + x] == true) { //Jos ymp‰rˆiv‰ss‰ ruudussa on jotain, ei alusta voida asettaa.
+				if (DEBUGGING)
+					logfile << "DEB: ---Cell blocked: " << x << ", " << y << "\n";
+				return true;
+			}
+		}
+		else { return true; }
+
+		return false;
+
+	}
 
 
 	///X,Y,Rotaatio(oikea=0 ja siit‰ myˆt‰p‰iv‰‰n), koko. Palauttaa false jos ei onnistunut.
@@ -470,7 +602,7 @@ public:
 		if (newShip == NULL) {
 			newShip = new ship;
 			(*newShip).size = 0;
-			(*newShip).coords = new int[10];
+			(*newShip).coords = new int[10]();
 		}
 
 		if (DEBUGGING) {
@@ -491,7 +623,7 @@ public:
 				}
 				else {
 					//Tarkistetaan solu ja sen ymp‰ristˆ, eli ett‰ onko tilaa
-					if (CheckCellSurroundingsReserved(x, y) == true) {
+					if (CheckCellReserved(x, y) == true) {
 						if (DEBUGGING) {
 							logfile << "DEB: Failed to put ship like this: x:" << from_x << " y:" << from_y << " rotation: " << rotation<<"\n";
 						}
@@ -566,11 +698,11 @@ public:
 	bool * GetShipArray() {
 		return shipArray;
 	}
-	bool * GetMissileArray() {
+	char * GetMissileArray() {
 		return missileArray;
 	}
 
-	void GiveArrayPointers(bool*shipArray_, bool*missileArray_) {
+	void GiveArrayPointers(bool*shipArray_, char*missileArray_) {
 		shipArray = shipArray_;
 		missileArray = missileArray_;
 		//delete shipArray_;
@@ -579,6 +711,7 @@ public:
 
 	///Moodi:0=piirret‰‰n alukset ja varatut alueet. 1-alus, 2-varattu
 	///Moodi:1=piirret‰‰n alukset.                   1-alus
+	///Moodi:2=piirret‰‰n osumat ja hudit            .-ei ammuttu o-huti x-osuma
 	int* GetVisibleArray(int mode) {
 		for (int x = 0; x <= 10 - 1; x++) {
 			for (int y = 0; y <= 10 - 1; y++) {
@@ -594,10 +727,22 @@ public:
 						visibleArray[y * 10 + x] = 1;
 				}
 				//1 - Alukset
-				if (mode == 1) {
+				else if (mode == 1) {
 					//Alus
 					if (shipArray[y * 10 + x] == true)
 						visibleArray[y * 10 + x] = 1;
+				}
+				//Normaali vihollisn‰kym‰
+				else if (mode == 2) {
+					//Ei ammuttu
+					if (missileArray[y * 10 + x] == '.')
+						visibleArray[y * 10 + x] = '.';
+					//Huti
+					if (missileArray[y * 10 + x] == 'o')
+						visibleArray[y * 10 + x] = 'o';
+					//Osuma
+					if (missileArray[y * 10 + x] == 'x')
+						visibleArray[y * 10 + x] = 'x';
 				}
 			}
 		}
@@ -623,22 +768,22 @@ public:
 	bool MissileFiredAt(int coordX, int coordY) {
 		ship shipI;
 
-		if (missileArray[10 * coordY + coordX] == true) {
+		if (missileArray[10 * coordY + coordX] > 0) {
 			//Ammuttu jo t‰h‰n.
 			return false;
 		}
 
-		missileArray[10 * coordY + coordX] = true;
+		missileArray[10 * coordY + coordX] = 'o';
 
 		//Tarkistetaan, osuttiinko mihink‰‰n.
-		if (coordX >= 0 && coordX <= 9 & coordY <= 9 && coordY >= 0) {
+		if (coordX >= 0 && coordX <= 9 && coordY <= 9 && coordY >= 0) {
 			if (shipArray[coordY * 10 + coordX] != true) {
 				false;
 			}
 		} else { return false; }
 
 		//Osuttu
-		for (int i = 0; i < shipList.size() - 1; i++) {
+		for (int i = 0; i < shipList.size(); i++) {
 			for (int j = 0; j < (*shipList[i]).size; j++) {
 				shipI = (*shipList[i]);
 				//Osuttu kyseisen aluksen kyseiseen kohtaan.
@@ -646,17 +791,20 @@ public:
 					shipI.status = 1;
 
 					if (CheckShipDamageCritical(shipI) == true) {
+						missileArray[10 * coordY + coordX] = 'x';
 						//Alus upotettu.
 						damageReport = shipI.size;
 						return true;
 					}
 					else { //Vain osuma.
+						missileArray[10 * coordY + coordX] = 'x';
 						damageReport = 0;
 						return true;
 					}
 				}
 			}
 		}
+		return false;
 	}
 
 	bool CheckShipDamageCritical(ship ship_) {
@@ -666,7 +814,7 @@ public:
 			x = ship_.coords[i * 2];
 			y = ship_.coords[(i * 2)+1];
 
-			if (shipArray[y * 10 + x] == false){
+			if (missileArray[y * 10 + x] == 0){
 				//jos on yksikin haavoittumaton osa, alus voi jatkaa
 				return false;
 			}
@@ -680,19 +828,19 @@ class SaveHandler {
 	string saveFileName = "savefile.txt";
 
 	bool *board_p_ship_data;
-	bool *board_p_missile_data;
+	char *board_p_missile_data;
 	bool *board_c_ship_data;
-	bool *board_c_missile_data;
+	char *board_c_missile_data;
 
 	bool cleanUpNeeded = false;
 
 public:
 
 	SaveHandler() {
-		board_p_ship_data     = new bool[100];
-		board_p_missile_data  = new bool[100];
-		board_c_ship_data     = new bool[100];
-		board_c_missile_data  = new bool[100];
+		board_p_ship_data     = new bool[100]();
+		board_p_missile_data  = new char[100]();
+		board_c_ship_data     = new bool[100]();
+		board_c_missile_data  = new char[100]();
 		cleanUpNeeded = true;
 	}
 
@@ -711,9 +859,9 @@ public:
 
 				if (file_.is_open()) {
 					PopulateSingleBoard(file_, board_p_ship_data);
-					PopulateSingleBoard(file_, board_p_missile_data);
+					PopulateSingleMissileBoard(file_, board_p_missile_data);
 					PopulateSingleBoard(file_, board_c_ship_data);
-					PopulateSingleBoard(file_, board_c_missile_data);
+					PopulateSingleMissileBoard(file_, board_c_missile_data);
 					cleanUpNeeded = true;
 
 					//CleanUp();
@@ -739,9 +887,9 @@ public:
 
 
 		//K‰yd‰‰n l‰pi 100 seuraavaa kirjainta
-		for (int i = 0; i <= 99; i){
+		for (int i = 0; i <= 99; i) {
 			file >> skipws >> character;
-			if (character == 'o'  || character == 'x') {
+			if (character == 'o' || character == 'x') {
 				if (character == 'o')
 					bool_array[i] = false;
 				if (character == 'x')
@@ -749,7 +897,28 @@ public:
 
 
 				i++;
-			} else {
+			}
+			else {
+				logfile << "There's something wrong with save file (board):>" << character << "<\n";
+				i++;
+			}
+		}
+	}
+	///Luetaan yksi 10x10 data-alue tiedostosta. Palatus
+	void PopulateSingleMissileBoard(ifstream & file, char* char_array) {
+		if (char_array == nullptr) {
+			exit(99);
+		}
+		char character = '_';
+
+
+		//K‰yd‰‰n l‰pi 100 seuraavaa kirjainta
+		for (int i = 0; i <= 99; i) {
+			file >> skipws >> character;
+			if (character == '.' || character == 'o' || character == 'x') {
+				i++;
+			}
+			else {
 				logfile << "There's something wrong with save file (board):>" << character << "<\n";
 				i++;
 			}
@@ -773,8 +942,8 @@ private:
 	bool cleanUpNeeded = false;
 
 	void LoadScoresFromFile() {
-		hs_names = new string[10];
-		hs_scores = new int[10];
+		hs_names = new string[10]();
+		hs_scores = new int[10]();
 		cleanUpNeeded = true;
 
 		ifstream file(filename);
@@ -815,8 +984,8 @@ public:
 	}
 
 	HighScoreManager(string highscore_filename, int score_count_){
-		hs_names = new string[10];
-		hs_scores = new int[10];
+		hs_names = new string[10]();
+		hs_scores = new int[10]();
 		score_count = score_count_;
 		filename = highscore_filename;
 		LoadScoresFromFile();
@@ -891,6 +1060,7 @@ public:
 
 		ship *lastShipAdded;
 
+
 		//Ruutu tyhj‰ksi
 		display.ClearBuffer(true);
 		display.DrawScreen();
@@ -901,11 +1071,11 @@ public:
 		display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 		
 		if (debugging_showsteps) {
-			display.BlitBoard((*board).GetVisibleArray(0), 40, 1, "2x2", 0);
+			display.BlitBoard((*board).GetVisibleArray(0), 40, 1, "2x2");
 		}
 		display.DrawScreen();
 
-		while (currentlyPlacingIndex < shipsToPlace.size()-1) {
+		while (currentlyPlacingIndex < shipsToPlace.size() - 1) {
 
 			//Pick the next ship
 			currentlyPlacing = shipsToPlace[currentlyPlacingIndex];
@@ -914,36 +1084,48 @@ public:
 
 			if (shipPlaced) {//Alus asetettu
 				display.inputStream << "Ship placed sized " << shipsToPlace[currentlyPlacingIndex] << ".";
-				display.BlitAndDraw(display.BLITTYPE_CONSOLE);
-				display.inputStream << "ShipData : ";
-				//haetaan pointteri alukseen
-				lastShipAdded = (*board).shipList.back();
-				for (int i = 0; i < 5; i++) {
-					if (i == (*lastShipAdded).size)
-						break;
-					display.inputStream << (*lastShipAdded).coords[i*2];
-					display.inputStream << ".";
-					display.inputStream << (*lastShipAdded).coords[i*2+1];
-					display.inputStream << ",";
+				logfile << "Ship placed sized " << shipsToPlace[currentlyPlacingIndex] << ".";
+				//Kerrotaan aluksen sijainti
+				if (DEBUGGING) {
+					display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+					display.inputStream << "ShipData : ";
+					//haetaan pointteri alukseen
+					lastShipAdded = (*board).shipList.back();
+					for (int i = 0; i < 5; i++) {
+						if (i == (*lastShipAdded).size)
+							break;
+						display.inputStream << (*lastShipAdded).coords[i * 2];
+						display.inputStream << ".";
+						display.inputStream << (*lastShipAdded).coords[i * 2 + 1];
+						display.inputStream << ",";
+						logfile << display.inputStream.str();
+					}
+					display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 				}
-				display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 
 				//Laudan piirto
 				if (debugging_showsteps) {
-					display.BlitBoard((*board).GetVisibleArray(0), 40, 1, "2x2", 0);
+					display.BlitBoard((*board).GetVisibleArray(0), 40, 1, "2x2");
 					display.DrawScreen();
 				}
 
 				if (debugging_showsteps) {
-					std::cin >> output_s;
+					//cin.get();
+					input.CInput(2, 28);
 				}
 				//Next ship
 				currentlyPlacingIndex++;
-			} else {
+			}
+			else {
+				logfile << "Something went wrong placing ship sized:";
 				display.inputStream << "Something went wrong placing ship sized:" << shipsToPlace[currentlyPlacingIndex];
 				display.BlitAndDraw(display.BLITTYPE_CONSOLE);
-				currentlyPlacingIndex ++;
+				currentlyPlacingIndex++;
+				system("pause");
+				return false;
 			}
+
+
 		}
 
 		//Kaikki on mennyt hyvin jos p‰‰stiin t‰nne asti
@@ -967,11 +1149,11 @@ public:
 			rotation = rand() % 8;
 
 			if (max_tries > 100 && DEBUGGING) {
+				logfile << "max tries over 100 for ship:" << shipSize << ":" << xLoc << "," << yLoc << ":r" << rotation<< "\n";
 				output << "max tries over 100 for ship:" << shipSize << ":" << xLoc << "," << yLoc << ":r" << rotation;
 				output.str();
 				display.BlitAndDraw(3, 5, output_s);
 				output.str(std::string());
-				//TODO:terminaali-like tulostus teksteille
 			}
 
 			ship_placed = (*board).trySetShip(xLoc, yLoc, rotation, shipSize);
@@ -1035,83 +1217,7 @@ void uuden_puskurin_testaus() {
 	getchar();
 }
 
-class Input {
-public:
-	int coordX = 0;
-	int coordY = 0;
 
-	string coordLetter = "ABCDEFGHIJ";
-
-	Input() {}
-
-	string CInput(int posX = 777, int posY = 777) {
-		string cinstring;
-		COORD position;
-		if (posX != 777) {
-			position.X = posX;
-			position.Y = posY;
-			SetConsoleCursorPosition(writeHandle, position);
-		}
-
-		std::cin >> cinstring;
-		std::cin.clear();
-		std::cin.ignore(10000, '\n');
-
-		return cinstring;
-	}
-	///Palauttaa false, jos syˆte ei ole koordinaatti.
-	///Jos syˆte on koordinaatti niin koordinaatit tallennetaan luokkamuttujiksi.
-	bool CoordsFromInput(string inp) {
-		//T‰ytyy olla kahden pituinen merkkijono
-		if (inp.length() != 2)
-			return false;
-		if (inp[0] == 'A' || inp[0] == 'a') {
-			coordX = 0;
-		}else if (inp[0] == 'B' || inp[0] == 'b') {
-			coordX = 1;
-		}
-		else if (inp[0] == 'C' || inp[0] == 'c') {
-			coordX = 2;
-		}
-		else if (inp[0] == 'D' || inp[0] == 'd') {
-			coordX = 3;
-		}
-		else if (inp[0] == 'E' || inp[0] == 'e') {
-			coordX = 4;
-		}
-		else if (inp[0] == 'F' || inp[0] == 'f') {
-			coordX = 5;
-		}
-		else if (inp[0] == 'G' || inp[0] == 'g') {
-			coordX = 6;
-		}
-		else if (inp[0] == 'H' || inp[0] == 'h') {
-			coordX = 7;
-		}
-		else if (inp[0] == 'I' || inp[0] == 'i') {
-			coordX = 8;
-		}
-		else if (inp[0] == 'J' || inp[0] == 'j') {
-			coordX = 9;
-		}else{
-			return false;
-		}
-
-		coordY = inp[1] - '0';
-
-		if (coordY >= 1 && coordY <= 10) {
-			coordY--;
-			return true;
-		}
-		else {
-			return false;
-		}
-
-	}
-
-};
-
-Input input = Input();
 
 
 class GameLogic {
@@ -1119,6 +1225,8 @@ class GameLogic {
 	AI ai;
 
 	bool cleanUpNeeded = false;
+
+	int enemyVisibleBoardMode = 2;
 
 public:
 	Board *playerBoard;
@@ -1158,12 +1266,13 @@ public:
 
 		if (DEBUGGING) {
 			display.BlitAndDraw(2, 5, "-Making AI place ships.. Hopefully");
-			display.BlitAndDraw(2, 6, "-Do you want to see the progress step by step? (Y/N)");
+			display.BlitAndDraw(2, 6, "-Do you want to see the progress step by step? (y/N)");
 		}
 
 		string answer;
 		bool debugging_showsteps = false;;
-		std::cin >> answer;
+		//std::cin >> answer;
+		answer = input.CInput();
 		if (answer == "y" || answer == "Y") {
 			display.BlitAndDraw(2, 7, "Ok. showing steps.");
 			debugging_showsteps = true;
@@ -1190,8 +1299,8 @@ public:
 
 		string command;
 
-		int* playerBoardArray = (*playerBoard).GetVisibleArray(0);
-		int* cpuBoardArray    = (*cpuBoard).GetVisibleArray(0);
+		int* playerBoardArray = (*playerBoard).GetVisibleArray(enemyVisibleBoardMode);
+		int* cpuBoardArray    = (*cpuBoard).GetVisibleArray(enemyVisibleBoardMode);
 
 		//DRAW UI
 		display.DrawStaticGameUI(playerBoardArray, cpuBoardArray);
@@ -1226,25 +1335,44 @@ public:
 	}
 
 	void MissileFiredAtCpu(int coordX, int coordY) {
+		int*cpuBoardArray;
 		//Tarkistaa, osuttiinko johonkin.
 		if ((*cpuBoard).MissileFiredAt(coordX, coordY) == true) {
 			switch((*cpuBoard).damageReport) {
 				case 0:
 					display.inputStream << "It's a hit!";
-				case 1:
+					break;
+				case 5:
 					display.inputStream << "HIT! You sank a carrier.";
-				case 2:
+					break;
+				case 4:
 					display.inputStream << "HIT! You sank a battleship.";
+					break;
 				case 3:
 					display.inputStream << "HIT! You sank a cruiser.";
-				case 4:
+					break;
+				case 2:
 					display.inputStream << "HIT! You sank a gunboat.";
-				case 5:
+					break;
+				case 1:
 					display.inputStream << "HIT! You sank a submarine.";
+					break;
 			}
 			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+			cpuBoardArray = (*cpuBoard).GetVisibleArray(enemyVisibleBoardMode);
+			display.BlitBoard(cpuBoardArray, 46, 2, "2x2");
 
 		}
+		else {
+			display.inputStream << "Missed.";
+			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+			cpuBoardArray = (*cpuBoard).GetVisibleArray(enemyVisibleBoardMode);
+			display.BlitBoard(cpuBoardArray, 46, 2, "2x2");
+		}
+
+		display.DrawScreen();
+
+
 
 	}
 
@@ -1256,7 +1384,7 @@ public:
 
 
 int main(void) {
-	srand(time(0));
+	srand((unsigned int)time(0));
 
 	logfile.open("log.txt");
 
@@ -1293,7 +1421,7 @@ int main(void) {
 
 
 		display.ClearBuffer();
-		//animation.PlayWelcomeAnimation();
+		animation.PlayWelcomeAnimation();
 		display.AddBordersToBuffer();
 
 		display.BlitTextAt(3, 9, "N: New Game");
@@ -1312,8 +1440,8 @@ int main(void) {
 
 		display.BlitAndDraw(3, 15, "Input:>");
 
-
-		std::cin >> inputString;
+		inputString = input.CInput(10, 15);
+		//std::cin >> inputString;
 
 		if (inputString == "N" || inputString == "n") {
 			display.ClearBuffer();
