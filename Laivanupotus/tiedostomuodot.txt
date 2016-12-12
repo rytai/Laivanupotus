@@ -1,0 +1,7 @@
+SAVEFILUT
+\ n aina rivinvaihtona
+
+Rivi 0: Pelaajan nimi
+Rivi 1-10: Pelaajan ohjuslauta
+Rivi 11: Pelaajan alusten m‰‰r‰
+Rivi 12-
