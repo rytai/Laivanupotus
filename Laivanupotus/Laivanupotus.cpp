@@ -345,6 +345,7 @@ class Input {
 public:
 	int coordX = 0;
 	int coordY = 0;
+	char coordChar = '?';
 
 	string input;
 
@@ -386,33 +387,43 @@ public:
 
 			if (inp[0] == 'A' || inp[0] == 'a') {
 				coordX = 0;
+				coordChar = 'A';
 			}
 			else if (inp[0] == 'B' || inp[0] == 'b') {
 				coordX = 1;
+				coordChar = 'B';
 			}
 			else if (inp[0] == 'C' || inp[0] == 'c') {
 				coordX = 2;
+				coordChar = 'C';
 			}
 			else if (inp[0] == 'D' || inp[0] == 'd') {
 				coordX = 3;
+				coordChar = 'D';
 			}
 			else if (inp[0] == 'E' || inp[0] == 'e') {
 				coordX = 4;
+				coordChar = 'E';
 			}
 			else if (inp[0] == 'F' || inp[0] == 'f') {
 				coordX = 5;
+				coordChar = 'F';
 			}
 			else if (inp[0] == 'G' || inp[0] == 'g') {
 				coordX = 6;
+				coordChar = 'G';
 			}
 			else if (inp[0] == 'H' || inp[0] == 'h') {
 				coordX = 7;
+				coordChar = 'H';
 			}
 			else if (inp[0] == 'I' || inp[0] == 'i') {
 				coordX = 8;
+				coordChar = 'I';
 			}
 			else if (inp[0] == 'J' || inp[0] == 'j') {
 				coordX = 9;
+				coordChar = 'J';
 			}
 			else {
 				return false;
@@ -505,13 +516,15 @@ class Board {
 
 
 public:
+	bool cornersCanTouch = false;
+
 	bool * shipArray;				//Pit‰‰ sis‰ll‰‰n alukset
 	char * missileArray;			//Pit‰‰ sis‰ll‰‰n osumat ja hudit
 	bool * shipArrayFree;
 
 	int * visibleArray;
 	
-	vector<ship*> shipList;
+	vector<ship*> * shipList;
 
 	///Upotetun aluksen koko, tai 0 jos vain osuma
 	int damageReport = 0;
@@ -529,22 +542,24 @@ public:
 	ShipsLeft shipsLeft;
 
 	Board() {
+		shipArray = new bool[100]();
 		shipArrayFree = new bool[100]();
 		visibleArray = new int[100]();
+		missileArray = new char[100]();
 
-		shipList = vector<ship*>();
+		shipList = new vector<ship*>();
 
 		cleanUpNeeded = true;
+
+		FillArraysWithDefault();
 	}
 
 	//Luo taulukot tyhj‰st‰
-	void FillArraysWithFalse() {
-		shipArray = new bool[100]();
-		missileArray = new char[100]();
+	void FillArraysWithDefault() {
 		for (int y = 0; y <= 10 - 1; y++) {
 			for (int x = 0; x <= 10 - 1; x++) {
 				shipArray[y*10+y] = false;
-				missileArray[y*10+x] = '.';
+				missileArray[y * 10 + x] = '.';
 			}
 		}
 	}
@@ -552,15 +567,25 @@ public:
 	//asettaa aluksen palan soluun ja varaa ymp‰rilt‰ tilan, johon ei voi osaa laittaa.
 	void setCell(int x, int y) {
 		shipArray[y * 10 + x] = true;
-			shipArrayFree[y * 10 + x] = true; // keskimm‰inen
-			if (y>0) //ylˆs
-				shipArrayFree[(y - 1) * 10 + x + 0] = true;
-			if (x<9) //vasen
-				shipArrayFree[(y) * 10 + x + 1] = true;
-			if (x>0) //Vasen
-				shipArrayFree[(y) * 10 + x + -1] = true;
-			if (y<9) //alas
-				shipArrayFree[(y + 1) * 10 + x + 0] = true;
+		shipArrayFree[y * 10 + x] = true; // keskimm‰inen
+		if (y>0) //ylˆs
+			shipArrayFree[(y - 1) * 10 + x + 0] = true;
+		if (x<9) //vasen
+			shipArrayFree[(y) * 10 + x + 1] = true;
+		if (x>0) //Vasen
+			shipArrayFree[(y) * 10 + x + -1] = true;
+		if (y<9) //alas
+			shipArrayFree[(y + 1) * 10 + x + 0] = true;
+		if (cornersCanTouch == false) {
+			if (y > 0 && x > 0)//ylˆs, vasen
+				shipArrayFree[(y - 1) * 10 + x - 1] = true;
+			if (y > 0 && x < 9)//ylˆs, oikea
+				shipArrayFree[(y - 1) * 10 + x + 1] = true;
+			if (y < 9 && x > 0)//alas, vasen
+				shipArrayFree[(y + 1) * 10 + x - 1] = true;
+			if (y < 9 && x < 9)//alas, oikea
+				shipArrayFree[(y + 1) * 10 + x + 1] = true;
+		}
 	}
 
 	///Palauttaa false jos ruutua, tai sen ymp‰ristˆ‰ ei ole varattu
@@ -603,7 +628,7 @@ public:
 
 
 	///X,Y,Rotaatio(oikea=0 ja siit‰ myˆt‰p‰iv‰‰n), koko. Palauttaa false jos ei onnistunut.
-	bool trySetShip(int from_x, int from_y, int rotation, int size, bool iterationsDone = false, ship *newShip = NULL) {
+	bool trySetShip(int from_x, int from_y, int rotation, int size, bool diagonals, bool iterationsDone = false, ship *newShip = NULL) {
 		int x = from_x;
 		int y = from_y;
 		int i = size;
@@ -648,28 +673,32 @@ public:
 					break;
 				case 1:
 					x++;
-					y--;
+					if(diagonals)
+						y--;
 					break;
 				case 2:
 					y--;
 					break;
 				case 3:
-					x--;
 					y--;
+					if (diagonals)
+						x--;
 					break;
 				case 4:
 					x--;
 					break;
 				case 5:
 					x--;
-					y++;
+					if (diagonals)
+						y++;
 					break;
 				case 6:
 					y++;
 					break;
 				case 7:
-					x++;
 					y++;
+					if (diagonals)
+						x++;
 					break;
 				}
 
@@ -686,13 +715,13 @@ public:
 
 		if (iterationsDone == true) {
 			//Lis‰t‰‰n uusi laiva laudan kokoelmaan.
-			shipList.push_back(newShip);
+			(*shipList).push_back(newShip);
 			return true; //Alus on asetettu. Palataan-->
 		}
 
 		//Kerran t‰nne on p‰‰sty, alue on vapaa. Asetetaan aluksen osat soluihin iteroimalla itse‰‰n.
 		//unohtamatta palautusta
-		return trySetShip(from_x, from_y, rotation, size, true, newShip);
+		return trySetShip(from_x, from_y, rotation, size, diagonals, true, newShip);
 	}
 
 
@@ -709,13 +738,6 @@ public:
 	}
 	char * GetMissileArray() {
 		return missileArray;
-	}
-
-	void GiveArrayPointers(bool*shipArray_, char*missileArray_) {
-		shipArray = shipArray_;
-		missileArray = missileArray_;
-		//delete shipArray_;
-		//delete missileArray_;
 	}
 
 	///Moodi:0=piirret‰‰n alukset ja varatut alueet. 1-alus, 2-varattu
@@ -761,9 +783,9 @@ public:
 	void CleanUp() {
 		if (cleanUpNeeded == true) {
 
-			for (int i = 0; i < shipList.size(); i++) {
-				delete (*shipList[i]).coords;
-				delete shipList[i];
+			for (int i = 0; i < (*shipList).size(); i++) {
+				delete (*(*shipList)[i]).coords;
+				delete (*shipList)[i];
 			}
 			delete[] shipArray;
 			delete[] missileArray;
@@ -792,9 +814,9 @@ public:
 		} else { return false; }
 
 		//Osuttu
-		for (int i = 0; i < shipList.size(); i++) {
-			for (int j = 0; j < (*shipList[i]).size; j++) {
-				shipI = (*shipList[i]);
+		for (int i = 0; i < (*shipList).size(); i++) {
+			for (int j = 0; j < (*(*shipList)[i]).size; j++) {
+				shipI = (*(*shipList)[i]);
 				//Osuttu kyseisen aluksen kyseiseen kohtaan.
 				if (shipI.coords[(j * 2)] == coordX && shipI.coords[(j * 2) + 1] == coordY) {
 					shipI.status = 1;
@@ -803,6 +825,8 @@ public:
 						missileArray[10 * coordY + coordX] = 'x';
 						//Alus upotettu.
 						damageReport = shipI.size;
+						shipI.status = 2;
+						OneShipLessLeft(shipI.size);
 						return true;
 					}
 					else { //Vain osuma.
@@ -814,6 +838,28 @@ public:
 			}
 		}
 		return false;
+	}
+
+	void OneShipLessLeft(int sizeOfShip) {
+		switch (sizeOfShip)
+		{
+		case 5:
+			shipsLeft.carrier--;
+			break;
+		case 4:
+			shipsLeft.battleship--;
+			break;
+		case 3:
+			shipsLeft.cruiser--;
+			break;
+		case 2:
+			shipsLeft.gunboat--;
+			break;
+		case 1:
+			shipsLeft.submarine--;
+			break;
+		}
+
 	}
 
 	bool CheckShipDamageCritical(ship ship_) {
@@ -831,6 +877,36 @@ public:
 		return true;
 	}
 
+	void PopulateBoardsFromSaveData(char * missileArray_, vector<ship*>* ships) {
+		ship * currentShip;
+		int x, y;
+
+		missileArray = missileArray_;
+		shipList = ships;
+
+		for (int i = 0; i < (*ships).size(); i++) {
+			currentShip = (*ships)[i];
+			for (int j = 0; j < 5; j++) {
+
+				x = (*currentShip).coords[j*2];
+				y = (*currentShip).coords[j*2+1];
+
+				shipArray[y * 10 + x] = true;
+			}
+		}
+	}
+
+	bool ShipsLeft() {
+		int totalShipsLeft = shipsLeft.carrier + shipsLeft.battleship+ shipsLeft.cruiser +
+							 shipsLeft.gunboat + shipsLeft.submarine;
+
+		if (totalShipsLeft <= 0)
+			return false;
+
+		return true;
+	}
+
+
 };
 
 class SaveHandler {
@@ -843,14 +919,11 @@ class SaveHandler {
 
 	bool cleanUpNeeded = false;
 
-public:
 
+public:
+	string playerName;
+	
 	SaveHandler() {
-		board_p_ship_data     = new bool[100]();
-		board_p_missile_data  = new char[100]();
-		board_c_ship_data     = new bool[100]();
-		board_c_missile_data  = new char[100]();
-		cleanUpNeeded = true;
 	}
 
 	//
@@ -861,10 +934,10 @@ public:
 		//Pelaajan tiedot.
 		SavePlayerName(output, playerName);
 		SaveMissileBoard(output, playerBoard);
-		SaveShips(output, playerBoard);
+		SaveShips(output, playerBoard, (*playerBoard).shipList);
 		//NPC tiedot.
 		SaveMissileBoard(output, cpuBoard);
-		SaveShips(output, cpuBoard);
+		SaveShips(output, cpuBoard, (*cpuBoard).shipList);
 
 		//Pelaajan laudat
 		//**ohjukset
@@ -918,24 +991,24 @@ public:
 		}	
 	}
 
-	void SaveShips(stringstream& output, Board * board){
+	void SaveShips(stringstream& output, Board * board, vector<ship*>*ships){
 		int * coords;
 		//Alusten m‰‰r‰
-		output << (*board).shipList.size() << "\n";
+		output << (*ships).size() << "\n";
 
-		for (int shipI = 0; shipI < (*board).shipList.size(); shipI++) {
+		for (int shipI = 0; shipI < (*ships).size(); shipI++) {
 			//Koko
-			output << (*(*board).shipList[shipI]).size << "\n";
+			output << (*(*ships)[shipI]).size << "\n";
 
 			//Aluksen kaikki koordinaatit
-			coords = (*(*board).shipList[shipI]).coords;
+			coords = (*(*ships)[shipI]).coords;
 			for (int i = 0; i <= 9; i++) {
 				output << coords[i];
 			}
 			output << "\n";
 
 			//Tila
-			output << (*(*board).shipList[shipI]).size << "\n";
+			output << (*(*ships)[shipI]).size << "\n";
 		}
 	}
 
@@ -947,15 +1020,11 @@ public:
 		cleanUpNeeded = false;
 	}
 
-	void LoadDataFromSaveFile() {
-		string playerName;
-		char * playerMissileArray;
+	void LoadDataFromSaveFile(char * playerMissileArray, char * cpuMissileArray,
+							  vector<ship*> * playerShipList,	vector<ship*> * cpuShipList) {
 		int playerShipCount;
-		vector<ship*> * playerShipList;
 
-		char * cpuMissileArray;
 		int cpuShipCount;
-		vector<ship*> * cpuShipList;
 		try {
 			ifstream file_;
 				file_.open(saveFileName);
@@ -967,11 +1036,6 @@ public:
 					display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 					input.CInput();
 				}
-
-				playerMissileArray = new char[100]();
-				playerShipList = new vector<ship*>();
-				cpuMissileArray = new char[100]();
-				cpuShipList = new vector<ship*>();
 
 				//Ladataan osat j‰rjestyksess‰
 				//PELAAJA
@@ -988,6 +1052,7 @@ public:
 				cleanUpNeeded = true;
 
 				file_.close();
+
 			}
 		catch (...) {
 			logfile << "Error in loading savefile-boards";
@@ -1071,12 +1136,13 @@ public:
 		//Loopataan annetun alusm‰‰r‰n verran alusrypp‰it‰
 		for (int i = 0; i < shipCount; i++)
 		{
+			int number;
 			//Luodaan uusi alusobjekti
 			currentShip = new ship();
 
 			//Luetaan alukselle koko,sijainnit,tila-------------
 			//Koko
-			file >> char_;
+				file >> char_;
 			ss << char_;
 			ss >> (*currentShip).size;
 			ss.str("");
@@ -1085,10 +1151,10 @@ public:
 			coords = new int[10]();
 			for (int i = 0; i < 10; i++) {
 				file >> char_;
-				ss << char_;
-				ss >>coords[i];
-				ss.str("");
+				number = char_ - '0';
+				coords[i] = number;
 			}
+			(*currentShip).coords = coords;
 			file >> char_; //newline poies
 			//Tila
 			file >> char_;
@@ -1153,12 +1219,6 @@ public:
 				i++;
 			}
 		}
-	}
-
-	///Board, True/False(True jos pelaajan lauta, false jos cpu lauta.
-	void FillBoardData(Board* player_board, Board* cpu_board) {
-		(*player_board).GiveArrayPointers(board_p_ship_data, board_p_missile_data);
-		(*cpu_board).GiveArrayPointers(board_c_ship_data, board_c_missile_data);
 	}
 };
 
@@ -1270,8 +1330,10 @@ public:
 };
 
 class AI {
+	bool allowDiagonal = false;
+
 	Board* board;
-	std::vector<int> shipsToPlace = { 5,4,4,3,3,3,2,2,2,2,1,1,1,1,1 };
+	std::vector<int> shipsToPlace = { 5,4,3,3,3,2,2,1 };
 
 public:
 	void GiveBoard(Board * board_) {
@@ -1285,8 +1347,8 @@ public:
 		(*board).shipsLeft.carrier = 1;
 		(*board).shipsLeft.battleship = 1;
 		(*board).shipsLeft.cruiser = 3;
-		(*board).shipsLeft.gunboat = 4;
-		(*board).shipsLeft.submarine = 5;
+		(*board).shipsLeft.gunboat = 2;
+		(*board).shipsLeft.submarine = 1;
 		int currentlyPlacingIndex = 0;
 		int currentlyPlacing;
 		bool shipPlaced = false;
@@ -1322,7 +1384,8 @@ public:
 				logfile << "Ship placed sized " << shipsToPlace[currentlyPlacingIndex] << ".";
 				
 				//N‰ytet‰‰n debugging tiedot.
-				//if (DEBUGGING) ShowDebuggingShipSet(lastShipAdded, debugging_showsteps);
+				lastShipAdded = (*(*board).shipList).back();
+				if (DEBUGGING) ShowDebuggingShipSet(lastShipAdded, debugging_showsteps);
 
 				//Next ship
 				currentlyPlacingIndex++;
@@ -1358,7 +1421,11 @@ public:
 		while (currentTry < max_tries) {
 			xLoc = rand() % 10;
 			yLoc = rand() % 10;
-			rotation = rand() % 8;
+			if (allowDiagonal) {
+				rotation = rand() % 8;
+			}else{
+				rotation = rand() % 4;
+			}
 
 			if (max_tries > 100 && DEBUGGING) {
 				logfile << "max tries over 100 for ship:" << shipSize << ":" << xLoc << "," << yLoc << ":r" << rotation<< "\n";
@@ -1368,7 +1435,7 @@ public:
 				output.str(std::string());
 			}
 
-			ship_placed = (*board).trySetShip(xLoc, yLoc, rotation, shipSize);
+			ship_placed = (*board).trySetShip(xLoc, yLoc, rotation, shipSize, allowDiagonal);
 
 			if (ship_placed == true) {
 				return true;
@@ -1385,7 +1452,7 @@ public:
 		display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 		display.inputStream << "ShipData : ";
 		//haetaan pointteri alukseen
-		lastShipAdded = (*board).shipList.back();
+		//lastShipAdded = (*board).shipList.back();
 		for (int i = 0; i < 5; i++) {
 			if (i == (*lastShipAdded).size)
 				break;
@@ -1483,9 +1550,15 @@ class GameLogic {
 
 	SaveHandler saveHandler;
 
+	bool gameOver = false;
+
+	bool oldGame = false;
+
 public:
 	Board *playerBoard;
 	Board *cpuBoard;
+
+	string playerName;
 
 	void CleanUp() {
 		if (cleanUpNeeded == true) {
@@ -1495,33 +1568,45 @@ public:
 			delete cpuBoard;
 		}
 
+		oldGame = false;
+
 		cleanUpNeeded = false;
 	}
 
+	std::string AskPlayerName() {
+		string name;
+
+		display.BlitAndDraw(777, 777, "Welcome. What is your name capt.? ", display.BLITTYPE_CONSOLE);
+
+		name = input.CInput();
+
+		return name;
+	}
+
 	void PrepareNewGame() {
+
+		playerName = AskPlayerName();
 
 
 		//Luodaan laudat-----------------------------------------
 		//Yhteiset
 
 		if (DEBUGGING)
-			display.BlitAndDraw(2, 4, "-Creating boards");
+
+			display.BlitAndDraw(777, 777, "-Creating boards", display.BLITTYPE_CONSOLE);
 
 		playerBoard = new Board();
 		cpuBoard = new Board();
 		cleanUpNeeded = true;
 
-
-		//omat
-		(*playerBoard).FillArraysWithFalse();
-		(*cpuBoard).FillArraysWithFalse();
 		//-------------------------------------------------------
 		//Anna AI:n asettaa alukset. (anna pointer laudasta)
 		ai.GiveBoard(cpuBoard);
 
 		if (DEBUGGING) {
-			display.BlitAndDraw(2, 5, "-Making AI place ships.. Hopefully");
-			display.BlitAndDraw(2, 6, "-Do you want to see the progress step by step? (y/N)");
+
+			display.BlitAndDraw(777, 777, "-Making AI place ships.. Hopefully", display.BLITTYPE_CONSOLE);
+			display.BlitAndDraw(777, 777, "-Do you want to see the progress step by step? (y/N)", display.BLITTYPE_CONSOLE);
 		}
 
 		string answer;
@@ -1529,11 +1614,12 @@ public:
 		//std::cin >> answer;
 		answer = input.CInput();
 		if (answer == "y" || answer == "Y") {
-			display.BlitAndDraw(2, 7, "Ok. showing steps.");
+			display.BlitAndDraw(777, 777, "Ok. showing steps.", display.BLITTYPE_CONSOLE);
 			debugging_showsteps = true;
 		}
 		else {
-			display.BlitAndDraw(2, 7, "Skipping step by step display.");
+
+			display.BlitAndDraw(777, 777, "Skipping step by step display.", display.BLITTYPE_CONSOLE);
 		}
 
 		ai.PlaceShips(debugging_showsteps);
@@ -1547,8 +1633,12 @@ public:
 		saveHandler = saveHandler_;
 
 		//Latauksen omat
-		saveHandler_.LoadDataFromSaveFile();
-		saveHandler_.FillBoardData(playerBoard, cpuBoard);
+		saveHandler_.LoadDataFromSaveFile((*playerBoard).missileArray, (*cpuBoard).missileArray,
+										  (*playerBoard).shipList, (*cpuBoard).shipList);
+		
+		playerName = saveHandler_.playerName;
+
+		oldGame = true;
 
 	}
 
@@ -1562,10 +1652,19 @@ public:
 		//DRAW UI
 		display.DrawStaticGameUI(playerBoardArray, cpuBoardArray);
 
-		if (DEBUGGING) {
-			display.BlitAndDraw(777, 777, "Game loop started.", display.BLITTYPE_CONSOLE);
+		if (oldGame) {
+			display.inputStream << "Welcome back " << playerName << ".";
+			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 		}
-
+		else {
+			display.inputStream << "Hello! and welcome to BattleShips V1.";
+			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+			display.inputStream << "You can shoot by typing coordinates.";
+			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+			display.inputStream << "Like this: \"A5\" or \"d7\"";
+			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+		}
+		
 		gameLooping = true;
 		
 		while (gameLooping == true) {
@@ -1575,8 +1674,6 @@ public:
 			display.BlitAndDraw(5, 22, "                  ", display.BLITTYPE_DEFAULT);
 
 			if (input.CoordsFromInput(command) == true) {
-				display.inputStream << "You shot at :" << input.coordX << input.coordY;
-				display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 				MissileFiredAtCpu(input.coordX, input.coordY);
 			}else if (command == "Q" || command == "q") {
 				gameLooping = false;
@@ -1592,6 +1689,7 @@ public:
 	}
 
 	void MissileHitAtCpu() {
+		display.inputStream << input.coordChar << input.coordY<<":";
 		switch ((*cpuBoard).damageReport) {
 				case 0:
 					display.inputStream << "It's a hit!";
@@ -1625,8 +1723,14 @@ public:
 		if ((*cpuBoard).MissileFiredAt(coordX, coordY) == true) {
 			MissileHitAtCpu();
 
+			if ((*cpuBoard).ShipsLeft() == false) {
+				gameLooping = false;
+				gameOver = true;
+			}
+
 		} // HUTI
 		else {
+			display.inputStream << input.coordChar << input.coordY << ":";
 			display.inputStream << "Missed.";
 			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 			cpuBoardArray = (*cpuBoard).GetVisibleArray(enemyVisibleBoardMode);
@@ -1636,8 +1740,23 @@ public:
 	}
 
 	void GameLoopExit() {
-		saveHandler.SaveGame(playerBoard, cpuBoard, "dero");
+		if (gameOver == false) {
+			saveHandler.SaveGame(playerBoard, cpuBoard, playerName);
+		}else{
+			GameOver();
+		}
 		CleanUp();
+	}
+
+	void GameOver() {
+		display.inputStream << "All ships are sunk.";
+		display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+
+		display.inputStream << " ";
+		display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+
+		display.inputStream << "Congratulations! You win the game!";
+		display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 	}
 };
 
@@ -1681,14 +1800,14 @@ int main(void) {
 
 
 		display.ClearBuffer();
-		//animation.PlayWelcomeAnimation();
+		animation.PlayWelcomeAnimation();
 		display.AddBordersToBuffer();
 
 		display.BlitTextAt(3, 9, "N: New Game");
 		display.BlitTextAt(3, 10, "C: Continue");
 		display.BlitTextAt(3, 11, "H: High scores");
 		display.BlitTextAt(3, 12, "Q: Exit");
-		display.BlitTextAt(50, 28, "Copyright: Tomi M‰kinen 2016");
+		display.BlitTextAt(50, 28, "Copyright: Tomi M\x84kinen 2016");
 
 		if (DEBUGGING) {
 			display.BlitAndDraw(3, 13, "D: Debugging: Enabled   ");
@@ -1709,7 +1828,7 @@ int main(void) {
 			display.DrawScreen();
 			display.BlitAndDraw(2, 3, "New game");
 			if (DEBUGGING)
-				display.BlitAndDraw(2, 3, "-Entering PrepareNewGame");
+				display.BlitAndDraw(777, 777, "-Entering PrepareNewGame", display.BLITTYPE_CONSOLE);
 			gameLogic.PrepareNewGame();
 			gameLogic.GameLoop();
 		}
@@ -1745,5 +1864,8 @@ int main(void) {
 	display.CleanUp();
 
 	logfile.close();
+
+	system("pause");
+
 	exit(0);
 }
