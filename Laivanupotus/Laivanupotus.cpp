@@ -234,7 +234,7 @@ class Display {
 						row += symbol_nonfree;
 					}
 					else if (charFromBoard == '.') {
-						row += symbol_nonfree;
+						row += symbol_unhit;
 					}
 					else if (charFromBoard == 'o') {
 						row += symbol_miss;
@@ -544,7 +544,7 @@ public:
 		for (int y = 0; y <= 10 - 1; y++) {
 			for (int x = 0; x <= 10 - 1; x++) {
 				shipArray[y*10+y] = false;
-				missileArray[y*10+x] = false;
+				missileArray[y*10+x] = '.';
 			}
 		}
 	}
@@ -777,7 +777,7 @@ public:
 	bool MissileFiredAt(int coordX, int coordY) {
 		ship shipI;
 
-		if (missileArray[10 * coordY + coordX] > 0) {
+		if (missileArray[10 * coordY + coordX] != '.') {
 			//Ammuttu jo t‰h‰n.
 			return false;
 		}
@@ -823,7 +823,7 @@ public:
 			x = ship_.coords[i * 2];
 			y = ship_.coords[(i * 2)+1];
 
-			if (missileArray[y * 10 + x] == 0){
+			if (missileArray[y * 10 + x] == '.'){
 				//jos on yksikin haavoittumaton osa, alus voi jatkaa
 				return false;
 			}
@@ -975,15 +975,15 @@ public:
 
 				//Ladataan osat j‰rjestyksess‰
 				//PELAAJA
-				playerName = LoadPlayerName(file_);
-				LoadMissileBoard(file_, playerMissileArray);
-				playerShipCount = LoadShipCount(file_);
-				LoadShips(file_, playerShipList);
+				playerName = LoadPlayerName(file_);					//Nimi
+				LoadMissileBoard(file_, playerMissileArray);		//Ohjuslauta
+				playerShipCount = LoadShipCount(file_);				//Alusten m‰‰r‰
+				LoadShips(file_, playerShipList,playerShipCount);	//Alukset
 
 				//CPU
 				LoadMissileBoard(file_, cpuMissileArray);
 				cpuShipCount = LoadShipCount(file_);
-				LoadShips(file_, cpuShipList);
+				LoadShips(file_, cpuShipList, cpuShipCount);
 
 				cleanUpNeeded = true;
 
@@ -1003,12 +1003,12 @@ public:
 		char char_ = ' ';
 
 		int tryCounter = 40;
-		while (char_ != '\n' && tryCounter>0) {
-			file >> skipws >> char_;
-			if (char_ != '\n') {
-				countString << char_;
+		while (tryCounter>0) {
+			file >> noskipws >> char_;
+			if (char_ == '\n') {
+				break;
 			}
-
+			countString << char_;
 			tryCounter--;
 		}
 
@@ -1022,11 +1022,12 @@ public:
 		char char_ = ' ';
 
 		int tryCounter = 40;
-		while (char_ != '\n' && tryCounter>0) {
+		while (tryCounter>0) {
 			file >> noskipws >> char_;
-			if (char_ != '\n') {
-				name << char_;
+			if (char_ == '\n') {
+				break;
 			}
+			name << char_;
 			
 			tryCounter--;
 		}
@@ -1042,7 +1043,7 @@ public:
 				file >> skipws >> character;
 
 				//Jos kirjain sallittu, lis‰t‰‰n se taulukkoo¥n.
-				if (character == 0 || character == 'x' || character == 'o') {
+				if (character == '.' || character == 'x' || character == 'o') {
 					missileArray[y * 10 + x] = character;
 				}//Laiton merkki
 				else {
@@ -1055,12 +1056,17 @@ public:
 			}
 		}
 
+		file >> noskipws >> character; //tyhj‰ pois
+
 		return missileArray;
 		
 	}
 
 	void LoadShips(ifstream & file, std::vector<ship*> * shipList, int shipCount) {
 		ship *currentShip;
+		int * coords;
+		stringstream ss;
+		char char_;
 
 		//Loopataan annetun alusm‰‰r‰n verran alusrypp‰it‰
 		for (int i = 0; i < shipCount; i++)
@@ -1068,36 +1074,36 @@ public:
 			//Luodaan uusi alusobjekti
 			currentShip = new ship();
 
-			//Luetaan alukselle koko,sijainnit,tila
+			//Luetaan alukselle koko,sijainnit,tila-------------
+			//Koko
+			file >> char_;
+			ss << char_;
+			ss >> (*currentShip).size;
+			ss.str("");
+			file >> char_; //newline poies
+			//Sijainnit, 10kpl x ja y koordinaatteja
+			coords = new int[10]();
+			for (int i = 0; i < 10; i++) {
+				file >> char_;
+				ss << char_;
+				ss >>coords[i];
+				ss.str("");
+			}
+			file >> char_; //newline poies
+			//Tila
+			file >> char_;
+			ss << char_;
+			ss >> (*currentShip).status;
+			ss.str("");
+			file >> char_; //newline poies
+
+
+
 			//TODO: n‰m‰ parsetaan sitten board-luokassa myˆhemmin
 
 			//Lis‰t‰‰n alus alusten listaan
 			(*shipList).push_back(currentShip);
 		}
-		int shipCount;
-		stringstream countString;
-
-
-		char char_ = ' ';
-
-		int tryCounter = 40;
-		while (char_ != '\n' && tryCounter>0) {
-			file >> skipws >> char_;
-			if (char_ != '\n') {
-				countString << char_;
-			}
-
-			tryCounter--;
-		}
-
-		countString >> shipCount;
-
-		return shipCount;
-		//Luetaan alusten m‰‰r‰
-
-		//Loopataan alukset l‰pi
-
-
 	}
 
 	
@@ -1675,7 +1681,7 @@ int main(void) {
 
 
 		display.ClearBuffer();
-		animation.PlayWelcomeAnimation();
+		//animation.PlayWelcomeAnimation();
 		display.AddBordersToBuffer();
 
 		display.BlitTextAt(3, 9, "N: New Game");
