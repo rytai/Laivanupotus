@@ -3,5 +3,6 @@ SAVEFILUT
 
 Rivi 0: Pelaajan nimi
 Rivi 1-10: Pelaajan ohjuslauta
+**osumat ja hudit
 Rivi 11: Pelaajan alusten m‰‰r‰
 Rivi 12-

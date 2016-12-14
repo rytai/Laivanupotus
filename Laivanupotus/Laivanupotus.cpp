@@ -908,8 +908,8 @@ public:
 		output << playerName << "\n";
 	}
 
+	///Kirjoittaa missile-char-arrayn tiedostoon
 	void SaveMissileBoard(stringstream& output,Board * board) {
-		char missileCell;
 		for (int y = 0; y <= 9; y++) {
 			for (int x = 0; x <= 9; x++) {
 				output << (*board).missileArray[y * 10 + x];
@@ -921,7 +921,7 @@ public:
 	void SaveShips(stringstream& output, Board * board){
 		int * coords;
 		//Alusten m‰‰r‰
-		output << (*board).shipList.size() << "--\n";
+		output << (*board).shipList.size() << "\n";
 
 		for (int shipI = 0; shipI < (*board).shipList.size(); shipI++) {
 			//Koko
@@ -948,30 +948,159 @@ public:
 	}
 
 	void LoadDataFromSaveFile() {
+		string playerName;
+		char * playerMissileArray;
+		int playerShipCount;
+		vector<ship*> * playerShipList;
+
+		char * cpuMissileArray;
+		int cpuShipCount;
+		vector<ship*> * cpuShipList;
 		try {
 			ifstream file_;
 				file_.open(saveFileName);
 
-				if (file_.is_open()) {
-					PopulateSingleBoard(file_, board_p_ship_data);
-					PopulateSingleMissileBoard(file_, board_p_missile_data);
-					PopulateSingleBoard(file_, board_c_ship_data);
-					PopulateSingleMissileBoard(file_, board_c_missile_data);
-					cleanUpNeeded = true;
+				//Virhe avattaessa tiedostoa.
+				if (!file_.is_open()) {
+					display.inputStream << "Can't open savefile.";
+					logfile << display.inputStream.str();
+					display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+					input.CInput();
+				}
 
-					//CleanUp();
-				}
-				else {
-					logfile << "Cant open save file";
-					exit(11);
-				}
+				playerMissileArray = new char[100]();
+				playerShipList = new vector<ship*>();
+				cpuMissileArray = new char[100]();
+				cpuShipList = new vector<ship*>();
+
+				//Ladataan osat j‰rjestyksess‰
+				//PELAAJA
+				playerName = LoadPlayerName(file_);
+				LoadMissileBoard(file_, playerMissileArray);
+				playerShipCount = LoadShipCount(file_);
+				LoadShips(file_, playerShipList);
+
+				//CPU
+				LoadMissileBoard(file_, cpuMissileArray);
+				cpuShipCount = LoadShipCount(file_);
+				LoadShips(file_, cpuShipList);
+
+				cleanUpNeeded = true;
+
 				file_.close();
 			}
 		catch (...) {
 			logfile << "Error in loading savefile-boards";
 			exit(11);
 		}
+	};
+
+	int LoadShipCount(ifstream & file) {
+		int shipCount;
+		stringstream countString;
+
+
+		char char_ = ' ';
+
+		int tryCounter = 40;
+		while (char_ != '\n' && tryCounter>0) {
+			file >> skipws >> char_;
+			if (char_ != '\n') {
+				countString << char_;
+			}
+
+			tryCounter--;
+		}
+
+		countString >> shipCount;
+
+		return shipCount;
 	}
+
+	std::string LoadPlayerName(ifstream & file) {
+		stringstream name;
+		char char_ = ' ';
+
+		int tryCounter = 40;
+		while (char_ != '\n' && tryCounter>0) {
+			file >> noskipws >> char_;
+			if (char_ != '\n') {
+				name << char_;
+			}
+			
+			tryCounter--;
+		}
+		return name.str();
+	}
+
+	char * LoadMissileBoard(ifstream & file, char * missileArray) {
+		char character = '?';
+		
+		for (int y = 0; y <= 9; y++) {
+			for (int x = 0; x <= 9; x++) {
+				//Luetaan yksi kirjain tiedostosta.
+				file >> skipws >> character;
+
+				//Jos kirjain sallittu, lis‰t‰‰n se taulukkoo¥n.
+				if (character == 0 || character == 'x' || character == 'o') {
+					missileArray[y * 10 + x] = character;
+				}//Laiton merkki
+				else {
+					display.inputStream << "Laiton merkki ohjustaulussa:" << character;
+					logfile << display.inputStream.str();
+					display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+					input.CInput();
+					exit(67);
+				}
+			}
+		}
+
+		return missileArray;
+		
+	}
+
+	void LoadShips(ifstream & file, std::vector<ship*> * shipList, int shipCount) {
+		ship *currentShip;
+
+		//Loopataan annetun alusm‰‰r‰n verran alusrypp‰it‰
+		for (int i = 0; i < shipCount; i++)
+		{
+			//Luodaan uusi alusobjekti
+			currentShip = new ship();
+
+			//Luetaan alukselle koko,sijainnit,tila
+			//TODO: n‰m‰ parsetaan sitten board-luokassa myˆhemmin
+
+			//Lis‰t‰‰n alus alusten listaan
+			(*shipList).push_back(currentShip);
+		}
+		int shipCount;
+		stringstream countString;
+
+
+		char char_ = ' ';
+
+		int tryCounter = 40;
+		while (char_ != '\n' && tryCounter>0) {
+			file >> skipws >> char_;
+			if (char_ != '\n') {
+				countString << char_;
+			}
+
+			tryCounter--;
+		}
+
+		countString >> shipCount;
+
+		return shipCount;
+		//Luetaan alusten m‰‰r‰
+
+		//Loopataan alukset l‰pi
+
+
+	}
+
+	
 
 	///Luetaan yksi 10x10 data-alue tiedostosta. Palatus
 	void PopulateSingleBoard(ifstream & file, bool* bool_array) {
@@ -1205,6 +1334,7 @@ public:
 		}
 
 		//Kaikki on mennyt hyvin jos p‰‰stiin t‰nne asti
+		display.inputStream.str("");
 		return true;
 
 	};
