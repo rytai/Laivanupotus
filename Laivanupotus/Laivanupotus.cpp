@@ -974,16 +974,19 @@ class SaveHandler {
 
 
 public:
+	int score;
 	string playerName;
 	
 	SaveHandler() {
 	}
 
 	//
-	bool SaveGame(Board * playerBoard, Board * cpuBoard, string playerName) {
+	bool SaveGame(Board * playerBoard, Board * cpuBoard, string playerName, int score) {
 		stringstream output;
 		ofstream file_;
 
+		//Pisteet
+		SaveScore(output, score);
 		//Pelaajan tiedot.
 		SavePlayerName(output, playerName);
 		SaveMissileBoard(output, playerBoard);
@@ -1027,6 +1030,11 @@ public:
 
 		file_.close();
 
+	}
+
+	///Nimi\n
+	void SaveScore(stringstream& output, int score_) {
+		output << score_ << "\n";
 	}
 
 	///Nimi\n
@@ -1090,6 +1098,8 @@ public:
 					input.CInput();
 				}
 
+				score = LoadScore(file_);
+
 				//Ladataan osat järjestyksessä
 				//PELAAJA
 				playerName = LoadPlayerName(file_);					//Nimi
@@ -1113,6 +1123,25 @@ public:
 		}
 	};
 
+	int LoadScore(ifstream & file) {
+		stringstream score_ss;
+
+		char char_ = ' ';
+
+		int tryCounter = 40;
+		while (tryCounter>0) {
+			file >> noskipws >> char_;
+			if (char_ == '\n') {
+				break;
+			}
+			score_ss << char_;
+			tryCounter--;
+		}
+
+		score_ss >> score;
+
+		return score;
+	}
 	int LoadShipCount(ifstream & file) {
 		int shipCount;
 		stringstream countString;
@@ -1279,7 +1308,19 @@ private:
 
 	bool cleanUpNeeded = false;
 
+
+
+	ofstream OpenFile(string filename) {
+		ofstream file;
+		file.open(filename);
+		return file;
+	};
+
+public:
+
 	void LoadScoresFromFile() {
+		CleanUp();
+
 		hs_names = new string[10]();
 		hs_scores = new int[10]();
 		cleanUpNeeded = true;
@@ -1302,16 +1343,6 @@ private:
 		}
 
 	};
-
-
-	ofstream OpenFile(string filename) {
-		ofstream file;
-		file.open(filename);
-		return file;
-	};
-
-public:
-
 	///Free the dynamic memory.
 	void CleanUp() {
 		if (cleanUpNeeded) {
@@ -1329,10 +1360,26 @@ public:
 		LoadScoresFromFile();
 	};
 
-	void WriteHighScoresToFile() {
+	void WriteHighScoresToFile(string new_name = "", int new_score = 0) {
 		int hs_scores_copy[10];
 		int largestValue;
 		int largestIndex;
+
+		int smallestValue = 9000000000;
+		int smallestIndex;
+		// uudet pisteet pienimmän tilalle
+		if (new_score != 0) {
+			for (int i = 0; i < score_count; i++) {
+				if (hs_scores[i] < smallestValue) {
+					smallestValue = hs_scores[i];
+					smallestIndex = i;
+				}
+			}
+
+			hs_names[smallestIndex]  = new_name;
+			hs_scores[smallestIndex] = new_score;
+		}
+
 		ofstream file = OpenFile(filename);
 		if (file.is_open())
 		{
@@ -1352,7 +1399,11 @@ public:
 				}
 
 				//Nyt on käsissä suurin indeksi. Siirretään se tiedostoon ja nollataan kopioarraysta.
-				file << hs_names[largestIndex] << ":" << hs_scores[largestIndex] << "\n";
+				file << hs_names[largestIndex] << ":" << hs_scores[largestIndex];
+
+				if (i != score_count - 1) {
+					file << "\n";
+				}
 
 				//nollaus
 				hs_scores_copy[largestIndex] = 0;
@@ -1608,16 +1659,39 @@ void uuden_puskurin_testaus() {
 }
 
 class ScoreKeeper {
-public:
-	int Score() {
-		return score;
-	}
 private:
 	int score = 0;
 	int scoreForHit = 100;
 	int scoreForSink = 200;
+	//Nykyisen hitstreakin pisteet.
 	float comboScore = 0;
-	float comboMultiplier = 1.2;
+	float currentMultiplier = 1;
+	//Tällä kerrotaan kerroin kun hit streak toteutuu.
+	float streakMultiplier = 1.4;
+public:
+	void SetScore(int score_) {
+		score = score_;
+	}
+	int GetScore() {
+		return score;
+	}
+
+	void Hit() {
+		currentMultiplier = streakMultiplier * currentMultiplier;
+		comboScore += 100;
+	}
+
+	void Sink() {
+		comboScore += 100;
+	}
+
+	void Miss() {
+		//Annetaan pisteet, jotka on kerätty, jos on.
+		score += (comboScore *currentMultiplier);
+		//Nollataa kerroin ja kerätyt pisteet.
+		currentMultiplier	= 1;
+		comboScore			= 0;	
+	}
 };
 
 
@@ -1637,8 +1711,13 @@ class GameLogic {
 
 	bool cpuWon = false;
 
+	ScoreKeeper * scoreKeeper;
 
 public:
+	GameLogic(ScoreKeeper * scoreKeeper_) {
+		scoreKeeper = scoreKeeper_;
+	}
+
 	HighScoreManager * highScoreManager;
 	Board *playerBoard;
 	Board *cpuBoard;
@@ -1697,7 +1776,7 @@ public:
 		display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 		display.inputStream << "Coordinate : \"a5\" or \"J1\" or ...";
 		display.BlitAndDraw(display.BLITTYPE_CONSOLE);
-		display.inputStream << "Rotation: up, down, left, right.";
+		display.inputStream << "Rotation: type \"up\" or \"down\"/\"left\"/\"right\.";
 		display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 		display.inputStream << "Cancel by pressing enter/return.";
 		display.BlitAndDraw(display.BLITTYPE_CONSOLE);
@@ -1814,6 +1893,8 @@ public:
 
 		ai.PlaceShips(debugging_showsteps);
 
+		display.ClearBuffer(true);
+
 		PlayerPlaceShips();
 
 	}
@@ -1827,6 +1908,8 @@ public:
 		//Latauksen omat
 		saveHandler_.LoadDataFromSaveFile((*playerBoard).missileArray, (*cpuBoard).missileArray,
 										  (*playerBoard).shipList, (*cpuBoard).shipList);
+
+		(*scoreKeeper).SetScore(saveHandler_.score);
 
 		(*playerBoard).PopulateBoardsFromSaveData();
 		(*cpuBoard).PopulateBoardsFromSaveData();
@@ -1882,7 +1965,7 @@ public:
 				gameLooping = false;
 			}
 			else if (command == "saveall") {
-				saveHandler.SaveGame(playerBoard, cpuBoard, playerName);
+				saveHandler.SaveGame(playerBoard, cpuBoard, playerName, (*scoreKeeper).GetScore());
 			} else {
 				display.BlitAndDraw(5, 22, "Input coord or Q. ", display.BLITTYPE_DEFAULT);
 			}
@@ -1951,26 +2034,36 @@ public:
 	void MissileHitAtCpu() {
 		display.inputStream << input.coordChar << (input.coordY+1)<<":";
 		switch ((*cpuBoard).damageReport) {
-				case 0:
-					display.inputStream << "It's a hit!";
-					break;
-				case 5:
-					display.inputStream << "HIT! You sank a carrier.";
-					//((*cpuBoard).shipsLeft
-					break;
-				case 4:
-					display.inputStream << "HIT! You sank a battleship.";
-					break;
-				case 3:
-					display.inputStream << "HIT! You sank a cruiser.";
-					break;
-				case 2:
-					display.inputStream << "HIT! You sank a gunboat.";
-					break;
-				case 1:
-					display.inputStream << "HIT! You sank a submarine.";
-					break;
-	}
+			case 0:
+				display.inputStream << "It's a hit!";
+				(*scoreKeeper).Hit();
+				break;
+			case 5:
+				display.inputStream << "HIT! You sank a carrier.";
+				(*scoreKeeper).Hit();
+				(*scoreKeeper).Sink();
+				break;
+			case 4:
+				display.inputStream << "HIT! You sank a battleship.";
+				(*scoreKeeper).Hit();
+				(*scoreKeeper).Sink();
+				break;
+			case 3:
+				display.inputStream << "HIT! You sank a cruiser.";
+				(*scoreKeeper).Hit();
+				(*scoreKeeper).Sink();
+				break;
+			case 2:
+				display.inputStream << "HIT! You sank a gunboat.";
+				(*scoreKeeper).Hit();
+				(*scoreKeeper).Sink();
+				break;
+			case 1:
+				display.inputStream << "HIT! You sank a submarine.";
+				(*scoreKeeper).Hit();
+				(*scoreKeeper).Sink();
+				break;
+		}
 	display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 	int *cpuBoardArray = (*cpuBoard).GetVisibleArray(enemyVisibleBoardMode);
 	display.BlitBoard(cpuBoardArray, 46, 2, "2x2");
@@ -1997,13 +2090,14 @@ public:
 			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 			cpuBoardArray = (*cpuBoard).GetVisibleArray(enemyVisibleBoardMode);
 			display.BlitBoard(cpuBoardArray, 46, 2, "2x2");
+			(*scoreKeeper).Miss();
 		}
 		display.DrawScreen();
 	}
 
 	void GameLoopExit() {
 		if (gameOver == false) {
-			saveHandler.SaveGame(playerBoard, cpuBoard, playerName);
+			saveHandler.SaveGame(playerBoard, cpuBoard, playerName, (*scoreKeeper).GetScore());
 		}else{
 			GameOver();
 		}
@@ -2022,7 +2116,15 @@ public:
 			display.inputStream << "Congratulations! You win the game! ";
 			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
 
-			(*highScoreManager).WriteHighScoresToFile();
+
+			display.inputStream << "";
+			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+			display.inputStream << "";
+			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+			display.inputStream << "Your score: " << (*scoreKeeper).GetScore();
+			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+
+			(*highScoreManager).WriteHighScoresToFile(playerName, (*scoreKeeper).GetScore());
 		}
 		else {
 			display.inputStream << "Seems like you are out of ships";
@@ -2033,6 +2135,15 @@ public:
 
 			display.inputStream << "Say hello to davy jones o7 ";
 			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+
+			display.inputStream << "";
+			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+			display.inputStream << "";
+			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+			display.inputStream << "Your score: " << (*scoreKeeper).GetScore();
+			display.BlitAndDraw(display.BLITTYPE_CONSOLE);
+
+			(*highScoreManager).WriteHighScoresToFile(playerName, (*scoreKeeper).GetScore());
 		
 		}
 
@@ -2064,9 +2175,10 @@ int main(void) {
 	Animation animation = Animation();
 
 	HighScoreManager highScoreManager = HighScoreManager("scores.txt", 10);
+	ScoreKeeper scoreKeeper;
 
 	SaveHandler saveHandler = SaveHandler();
-	GameLogic gameLogic;
+	GameLogic gameLogic = GameLogic(&scoreKeeper);
 	gameLogic.highScoreManager = &highScoreManager;
 
 	string inputString = "";	//Syöttö
@@ -2122,6 +2234,7 @@ int main(void) {
 			gameLogic.GameLoop();
 		}
 		else if (inputString == "H" || inputString == "h") {
+			highScoreManager.LoadScoresFromFile();
 			highScoreManager.PrintHighScores();
 		}
 		else if (inputString == "Q" || inputString == "q") {
